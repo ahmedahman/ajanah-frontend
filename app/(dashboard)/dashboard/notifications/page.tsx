@@ -1,64 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, MessageCircle, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { notificationsAPI, type Notification as ApiNotification } from "@/lib/api-client";
 
-interface Notification {
-  id: string;
-  title: string;
-  description: string;
-  audience: string;
-  date: string;
-  time: string;
-  status: "sent" | "draft";
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: "1",
-    title: "Event Starts Tomorrow!",
-    description:
-      "Get ready for an amazing experience at Tech Summit 2024. Check your schedule and plan your day.",
-    audience: "All Attendees",
-    date: "Nov 11, 2025",
-    time: "10:00 AM",
-    status: "sent",
-  },
-  {
-    id: "2",
-    title: "Keynote Starting in 30 Minutes",
-    description:
-      'Join us at the Main Stage for our opening keynote: "The Future of Technology" with John Smith.',
-    audience: "All Attendees",
-    date: "Nov 11, 2025",
-    time: "10:00 AM",
-    status: "sent",
-  },
-  {
-    id: "3",
-    title: "Event Starts Tomorrow!",
-    description:
-      "Get ready for an amazing experience at Tech Summit 2024. Check your schedule and plan your day.",
-    audience: "All Attendees",
-    date: "Nov 11, 2025",
-    time: "10:00 AM",
-    status: "sent",
-  },
-  {
-    id: "4",
-    title: "Event Starts Tomorrow!",
-    description:
-      "Get ready for an amazing experience at Tech Summit 2024. Check your schedule and plan your day.",
-    audience: "All Attendees",
-    date: "Nov 11, 2025",
-    time: "10:00 AM",
-    status: "sent",
-  },
-];
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
 
 export default function NotificationsPage() {
-  const [notifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    notificationsAPI.getAll()
+      .then((res) => {
+        if (res.success && res.data) {
+          setNotifications(res.data);
+        } else {
+          setError(res.error?.message ?? "Failed to load notifications.");
+        }
+      })
+      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleMarkRead = async (notificationId: string) => {
+    const res = await notificationsAPI.markRead(notificationId);
+    if (res.success) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+      );
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -88,72 +70,83 @@ export default function NotificationsPage() {
         </div>
       </div>
 
+      {/* Error */}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
       {/* Notifications Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {notifications.map((notification) => (
-          <div
-            key={notification.id}
-            className="bg-white rounded-lg border border-border p-6 hover:shadow-md transition-shadow"
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
-                    notification.status === "sent"
-                      ? "bg-primary/10 text-primary"
-                      : "bg-secondary text-foreground"
-                  }`}
-                >
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : !error && notifications.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notifications yet.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className="bg-white rounded-lg border border-border p-6 hover:shadow-md transition-shadow"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-2">
                   <span
-                    className={`w-2 h-2 rounded-full ${
-                      notification.status === "sent"
-                        ? "bg-primary"
-                        : "bg-gray-400"
+                    className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
+                      notification.isRead
+                        ? "bg-secondary text-foreground"
+                        : "bg-primary/10 text-primary"
                     }`}
-                  />
-                  {notification.status === "sent" ? "Sent" : "Draft"}
-                </span>
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        notification.isRead ? "bg-gray-400" : "bg-primary"
+                      }`}
+                    />
+                    {notification.isRead ? "Read" : "Unread"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleMarkRead(notification.id)}
+                    disabled={notification.isRead}
+                    className="text-cyan-500 hover:text-cyan-600 font-medium text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Eye className="h-4 w-4 inline mr-1" />
+                    View
+                  </button>
+                  <button className="text-foreground hover:text-primary font-medium text-sm transition-colors">
+                    Duplicate
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button className="text-cyan-500 hover:text-cyan-600 font-medium text-sm transition-colors">
-                  <Eye className="h-4 w-4 inline mr-1" />
-                  View
-                </button>
-                <button className="text-foreground hover:text-primary font-medium text-sm transition-colors">
-                  Duplicate
-                </button>
-              </div>
-            </div>
 
-            {/* Title and Description */}
-            <div className="mb-4">
-              <h3 className="font-bold text-foreground mb-2">
-                {notification.title}
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {notification.description}
-              </p>
-            </div>
+              {/* Title and Description */}
+              <div className="mb-4">
+                <h3 className="font-bold text-foreground mb-2">
+                  {notification.title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {notification.body}
+                </p>
+              </div>
 
-            {/* Footer */}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-4">
-              <div className="flex items-center gap-1">
-                <span className="w-4 h-4 inline-block">👥</span>
-                {notification.audience}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-4 h-4 inline-block">📅</span>
-                {notification.date}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-4 h-4 inline-block">⏰</span>
-                {notification.time}
+              {/* Footer */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-4">
+                <div className="flex items-center gap-1">
+                  <span className="w-4 h-4 inline-block">👥</span>
+                  All Attendees
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-4 h-4 inline-block">📅</span>
+                  {formatDate(notification.createdAt)}
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-4 h-4 inline-block">⏰</span>
+                  {formatTime(notification.createdAt)}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

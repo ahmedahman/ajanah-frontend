@@ -1,25 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { eventAPI, DEFAULT_EVENT_ID, type Event } from "@/lib/api-client";
+
+type EventDetail = Event & { youtubeStreamingUrl?: string };
 
 export default function GeneralInformationPage() {
   const [communityName, setCommunityName] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [communityId, setCommunityId] = useState(
-    "CMTY_" + Math.random().toString(36).substr(2, 9),
-  );
+  const [communityId, setCommunityId] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null);
 
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    eventAPI.getDetail(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const event = res.data as EventDetail;
+          setCommunityName(event.title ?? "");
+          setYoutubeUrl(event.youtubeStreamingUrl ?? "");
+          setCommunityId(event.id);
+        } else {
+          setError(res.error?.message ?? "Failed to load event data.");
+        }
+      })
+      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setLoading(false));
+  }, []);
+
   const handleCopyId = () => {
     navigator.clipboard.writeText(communityId);
     setCopiedId(true);
     setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await eventAPI.update(DEFAULT_EVENT_ID, {
+        title: communityName,
+        ...(youtubeUrl !== undefined && { youtubeStreamingUrl: youtubeUrl } as Partial<EventDetail>),
+      } as Partial<Event>);
+      if (res.success) {
+        setSuccessMsg("Changes saved successfully.");
+      } else {
+        setError(res.error?.message ?? "Failed to save changes.");
+      }
+    } catch {
+      setError("Cannot connect to server. Make sure the backend is running.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleFileUpload = (
@@ -131,9 +174,10 @@ export default function GeneralInformationPage() {
               Community Name
             </label>
             <Input
-              value={communityName}
+              value={loading ? "" : communityName}
               onChange={(e) => setCommunityName(e.target.value)}
-              placeholder="Enter Community Name"
+              placeholder={loading ? "…" : "Enter Community Name"}
+              disabled={loading}
               className="mt-2 h-10"
             />
           </div>
@@ -144,9 +188,10 @@ export default function GeneralInformationPage() {
               YouTube Streaming URL
             </label>
             <Input
-              value={youtubeUrl}
+              value={loading ? "" : youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder="Enter YouTube URL"
+              placeholder={loading ? "…" : "Enter YouTube URL"}
+              disabled={loading}
               className="mt-2 h-10"
             />
           </div>
@@ -194,7 +239,7 @@ export default function GeneralInformationPage() {
               </h3>
               <div className="flex gap-2">
                 <Input
-                  value={communityId}
+                  value={loading ? "…" : communityId}
                   readOnly
                   className="h-10 bg-muted text-foreground"
                 />
@@ -203,6 +248,7 @@ export default function GeneralInformationPage() {
                   variant="outline"
                   size="icon"
                   className="h-10 w-10"
+                  disabled={loading}
                 >
                   {copiedId ? (
                     <svg
@@ -246,9 +292,15 @@ export default function GeneralInformationPage() {
       </div>
 
       {/* Save Button */}
-      <div className="flex justify-end">
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 px-8">
-          Save Changes
+      <div className="flex flex-col items-end gap-2">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {successMsg && <p className="text-sm text-primary">{successMsg}</p>}
+        <Button
+          onClick={handleSave}
+          disabled={loading || saving}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 px-8"
+        >
+          {saving ? "Saving…" : "Save Changes"}
         </Button>
       </div>
     </div>

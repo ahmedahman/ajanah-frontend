@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { 
-  Users, 
-  UserCheck, 
-  Mic2, 
-  Building2, 
-  Plus, 
+import { useState, useEffect } from "react"
+import {
+  Users,
+  UserCheck,
+  Mic2,
+  Building2,
+  Plus,
   ArrowUpRight,
   Calendar,
   Bell,
@@ -16,13 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckInsChart } from "@/components/dashboard/check-ins-chart"
-
-const stats = [
-  { label: "Total Participants", value: "2,145", icon: Users, color: "text-primary" },
-  { label: "Check-ins Today", value: "1,743", icon: UserCheck, color: "text-primary" },
-  { label: "Speakers", value: "24", icon: Mic2, color: "text-primary" },
-  { label: "Exhibitors", value: "14", icon: Building2, color: "text-primary" },
-]
+import { dashboardAPI, type DashboardStats } from "@/lib/api-client"
 
 const quickActions = [
   {
@@ -64,6 +58,30 @@ const quickActions = [
 ]
 
 export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    dashboardAPI.getDashboard()
+      .then((res) => {
+        if (res.success && res.data) {
+          setStats(res.data)
+        } else {
+          setError(res.error?.message ?? "Failed to load dashboard data.")
+        }
+      })
+      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const statCards = [
+    { label: "Total Participants", value: loading ? "…" : (stats?.totalUsers.toLocaleString() ?? "–"), icon: Users, color: "text-primary" },
+    { label: "Check-ins Today", value: loading ? "…" : (stats?.dau.toLocaleString() ?? "–"), icon: UserCheck, color: "text-primary" },
+    { label: "Speakers", value: "–", icon: Mic2, color: "text-primary" },
+    { label: "Exhibitors", value: "–", icon: Building2, color: "text-primary" },
+  ]
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -76,8 +94,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats cards */}
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
+        {statCards.map((stat) => (
           <Card key={stat.label} className="bg-white">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">

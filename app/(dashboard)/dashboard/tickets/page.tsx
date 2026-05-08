@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { 
-  Search, 
-  Plus, 
+import {
+  Search,
+  Plus,
   Download,
   MoreHorizontal,
   CheckCircle2,
@@ -24,54 +24,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { ticketsAPI, DEFAULT_EVENT_ID, type TicketType } from "@/lib/api-client"
 
-// Mock data for attendees
+// Mock data for attendees (not wired up yet)
 const attendeesData = [
   { id: 1, name: "ALICE JOHNSON", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
   { id: 2, name: "Bob Smith", ticketType: "General Pass", status: "Checked In", registration: "10/31/25", amount: "$20" },
   { id: 3, name: "Carol Williams", ticketType: "General Pass", status: "Not Checked In", registration: "10/31/25", amount: "$20" },
   { id: 4, name: "David Brown", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
   { id: 5, name: "Emma Davis", ticketType: "VIP Pass", status: "Not Checked In", registration: "10/31/25", amount: "$50" },
-]
-
-// Mock data for ticket types
-const ticketTypesData = [
-  { 
-    id: 1, 
-    name: "VIP Pass", 
-    price: "$50", 
-    sold: 124, 
-    available: 26, 
-    total: 150,
-    revenue: "$6,200" 
-  },
-  { 
-    id: 2, 
-    name: "General Pass", 
-    price: "$20", 
-    sold: 543, 
-    available: 157, 
-    total: 700,
-    revenue: "$11,348" 
-  },
-  { 
-    id: 3, 
-    name: "Student Pass", 
-    price: "FREE", 
-    sold: 91, 
-    available: 107, 
-    total: 198,
-    revenue: "$0" 
-  },
-  { 
-    id: 4, 
-    name: "Early Bird", 
-    price: "$15", 
-    sold: 89, 
-    available: 11, 
-    total: 100,
-    revenue: "$1,415" 
-  },
 ]
 
 // Stats data
@@ -88,6 +49,23 @@ export default function TicketsPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>("attendees")
   const [searchQuery, setSearchQuery] = useState("")
+
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
+  const [ticketsLoading, setTicketsLoading] = useState(true)
+  const [ticketsError, setTicketsError] = useState<string | null>(null)
+
+  useEffect(() => {
+    ticketsAPI.getEventTickets(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          setTicketTypes(res.data)
+        } else {
+          setTicketsError(res.error?.message ?? "Failed to load ticket types.")
+        }
+      })
+      .catch(() => setTicketsError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setTicketsLoading(false))
+  }, [])
 
   const filteredAttendees = attendeesData.filter(attendee =>
     attendee.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -159,7 +137,7 @@ export default function TicketsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Ticket Types ({ticketTypesData.length})
+              Ticket Types ({ticketsLoading ? "…" : ticketTypes.length})
               {activeTab === "ticket-types" && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
               )}
@@ -170,15 +148,17 @@ export default function TicketsPage() {
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === "attendees" ? (
-            <AttendeesView 
+            <AttendeesView
               attendees={filteredAttendees}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               getTicketTypeBadgeColor={getTicketTypeBadgeColor}
             />
           ) : (
-            <TicketTypesView 
-              ticketTypes={ticketTypesData}
+            <TicketTypesView
+              ticketTypes={ticketTypes}
+              ticketsLoading={ticketsLoading}
+              ticketsError={ticketsError}
               onCreateTicket={() => router.push("/dashboard/tickets/create")}
             />
           )}
@@ -273,8 +253,8 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
                   {attendee.name}
                 </td>
                 <td className="px-4 py-4">
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className={cn("font-normal", getTicketTypeBadgeColor(attendee.ticketType))}
                   >
                     {attendee.ticketType}
@@ -323,16 +303,18 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
 
 // Ticket Types View Component
 interface TicketTypesViewProps {
-  ticketTypes: typeof ticketTypesData
+  ticketTypes: TicketType[]
+  ticketsLoading: boolean
+  ticketsError: string | null
   onCreateTicket: () => void
 }
 
-function TicketTypesView({ ticketTypes, onCreateTicket }: TicketTypesViewProps) {
+function TicketTypesView({ ticketTypes, ticketsLoading, ticketsError, onCreateTicket }: TicketTypesViewProps) {
   return (
     <div className="space-y-6">
       {/* Create Button */}
       <div className="flex justify-end">
-        <Button 
+        <Button
           className="bg-primary hover:bg-primary/90 text-primary-foreground"
           onClick={onCreateTicket}
         >
@@ -341,51 +323,63 @@ function TicketTypesView({ ticketTypes, onCreateTicket }: TicketTypesViewProps) 
         </Button>
       </div>
 
-      {/* Ticket Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {ticketTypes.map((ticket) => {
-          const progressPercent = (ticket.sold / ticket.total) * 100
-          
-          return (
-            <div 
-              key={ticket.id} 
-              className="bg-white rounded-xl border border-border p-6 space-y-4 hover:shadow-md transition-shadow"
-            >
-              {/* Header */}
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">{ticket.name}</h3>
-                <p className="text-xl font-bold text-primary mt-1">{ticket.price}</p>
-              </div>
+      {ticketsError && (
+        <p className="text-sm text-destructive">{ticketsError}</p>
+      )}
 
-              {/* Stats */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Sold</span>
-                  <span className="text-foreground">{ticket.sold} tickets</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Available</span>
-                  <span className="text-foreground">{ticket.available} tickets</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Total Revenue</span>
-                  <span className="text-primary font-semibold">{ticket.revenue}</span>
-                </div>
-              </div>
+      {ticketsLoading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : !ticketsError && ticketTypes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No ticket types yet.</p>
+      ) : (
+        /* Ticket Cards Grid */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {ticketTypes.map((ticket) => {
+            const displayPrice = ticket.price === 0 ? "FREE" : `$${ticket.price}`
+            const total = ticket.quantity ?? 0
+            const progressPercent = 0
 
-              {/* Progress Bar */}
-              <div className="space-y-1">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
+            return (
+              <div
+                key={ticket.id}
+                className="bg-white rounded-xl border border-border p-6 space-y-4 hover:shadow-md transition-shadow"
+              >
+                {/* Header */}
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">{ticket.name}</h3>
+                  <p className="text-xl font-bold text-primary mt-1">{displayPrice}</p>
+                </div>
+
+                {/* Stats */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Sold</span>
+                    <span className="text-foreground">– tickets</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Available</span>
+                    <span className="text-foreground">{total > 0 ? `${total} tickets` : "–"}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Total Revenue</span>
+                    <span className="text-primary font-semibold">–</span>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="space-y-1">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
