@@ -31,6 +31,7 @@ import {
   UploadedFile,
 } from "@/components/dashboard/import-modal";
 import { agendaAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
+import { CreateSessionModal } from "@/components/dashboard/create-session-modal";
 
 interface AgendaSession {
   id: string;
@@ -56,6 +57,7 @@ interface AgendaGroup {
 export default function AgendaPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<AgendaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +182,10 @@ export default function AgendaPage() {
               <Plus className="h-4 w-4 mr-2" />
               Import
             </Button>
-            <Button className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button
+              className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create Agenda
             </Button>
@@ -285,6 +290,13 @@ export default function AgendaPage() {
           </>
         )}
       </div>
+
+      {/* Create Session Modal */}
+      <CreateSessionModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => fetchSessions()}
+      />
 
       {/* Import Modal */}
       <ImportModal
