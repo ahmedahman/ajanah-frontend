@@ -24,7 +24,7 @@ export default function BrandingPage() {
   const [colors, setColors] = useState<Record<string, ColorSetting>>({
     navigation: {
       label: "Navigation",
-      value: "#0000000",
+      value: "#000000",
       description: "Colour of the menu (navigation bar)",
       enabled: false,
     },
@@ -36,7 +36,7 @@ export default function BrandingPage() {
     },
     text: {
       label: "Text",
-      value: "#0000000",
+      value: "#000000",
       description: "Colour of all written content.",
       enabled: false,
     },
@@ -50,7 +50,7 @@ export default function BrandingPage() {
     },
     background: {
       label: "Background",
-      value: "#0000000",
+      value: "#000000",
       enabled: false,
     },
   })
@@ -67,19 +67,19 @@ export default function BrandingPage() {
       .then((res) => {
         if (res.success && res.data) {
           const data = res.data
-          if (data.appearanceMode === "light" || data.appearanceMode === "dark") {
-            setTheme(data.appearanceMode)
+          if (data.appearanceMode === "LIGHT" || data.appearanceMode === "DARK") {
+            setTheme(data.appearanceMode.toLowerCase() as "light" | "dark")
           }
-          if (data.primaryColor) {
+          if ((data as any).mainActionsColor) {
             setColors((prev) => ({
               ...prev,
-              mainActions: { ...prev.mainActions, value: data.primaryColor! },
+              mainActions: { ...prev.mainActions, value: (data as any).mainActionsColor },
             }))
           }
-          if (data.secondaryColor) {
+          if ((data as any).textColor) {
             setColors((prev) => ({
               ...prev,
-              text: { ...prev.text, value: data.secondaryColor! },
+              text: { ...prev.text, value: (data as any).textColor },
             }))
           }
         } else {
@@ -93,9 +93,10 @@ export default function BrandingPage() {
   }, [])
 
   const handleColorChange = (key: string, value: string) => {
+    const sanitised = value === "" || value.startsWith("#") ? value : `#${value}`
     setColors(prev => ({
       ...prev,
-      [key]: { ...prev[key], value }
+      [key]: { ...prev[key], value: sanitised }
     }))
   }
 
@@ -148,16 +149,24 @@ export default function BrandingPage() {
     }
   }
 
+  const HEX_RE = /^#[A-Fa-f0-9]{6}$/
+
   const handleSave = async () => {
+    if (!HEX_RE.test(colors.mainActions.value) || !HEX_RE.test(colors.text.value)) {
+      setSaveError("One or more colour values are invalid. Use the format #RRGGBB (e.g. #01A138).")
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(false)
     try {
-      const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, {
-        appearanceMode: theme,
-        primaryColor: colors.mainActions.value,
-        secondaryColor: colors.text.value,
-      })
+      const payload = {
+        appearanceMode: theme.toUpperCase(),
+        mainActionsColor: colors.mainActions.value,
+        textColor: colors.text.value,
+      }
+      console.log("[branding] PATCH payload:", payload)
+      const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
       if (res.success) {
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
