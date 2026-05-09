@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ImportModal, IMPORT_MODAL_CONFIGS, UploadedFile } from "@/components/dashboard/import-modal"
+import { CreateExhibitorModal } from "@/components/dashboard/create-exhibitor-modal"
 import { exhibitorsAPI, DEFAULT_EVENT_ID, type Exhibitor } from "@/lib/api-client"
 
 export default function ExhibitorsPage() {
@@ -33,6 +34,7 @@ export default function ExhibitorsPage() {
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -175,7 +177,10 @@ export default function ExhibitorsPage() {
               <Plus className="h-4 w-4 mr-2" />
               Import
             </Button>
-            <Button className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button
+              className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create Exhibitors
             </Button>
@@ -321,6 +326,13 @@ export default function ExhibitorsPage() {
           </>
         )}
       </div>
+
+      {/* Create Exhibitor Modal */}
+      <CreateExhibitorModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => fetchExhibitors()}
+      />
 
       {/* Import Modal */}
       <ImportModal
