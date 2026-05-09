@@ -165,8 +165,7 @@ export default function BrandingPage() {
         mainActionsColor: colors.mainActions.value,
         textColor: colors.text.value,
       }
-      console.log("[branding] PATCH payload:", payload)
-      const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
+const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
       if (res.success) {
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)

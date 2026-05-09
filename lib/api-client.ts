@@ -616,3 +616,12 @@ export const storageAPI = {
     }).then((r) => r.json());
   },
 };
+
+// ── checkInAPI ────────────────────────────────────────────────────────────────
+
+const checkInAPI = {
+  getEventStatus: (eventId: string) =>
+    fetchAPI(`/check-in/event/${eventId}/status`),
+};
+
+export { checkInAPI };

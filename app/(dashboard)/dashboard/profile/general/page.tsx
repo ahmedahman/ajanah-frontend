@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Plus, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { eventAPI, DEFAULT_EVENT_ID, type Event } from "@/lib/api-client";
+import { eventAPI, brandingAPI, DEFAULT_EVENT_ID, type Event } from "@/lib/api-client";
 
 type EventDetail = Event & { youtubeStreamingUrl?: string };
 
@@ -21,6 +21,11 @@ export default function GeneralInformationPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [isUploadingFloorPlan, setIsUploadingFloorPlan] = useState(false);
 
   useEffect(() => {
     eventAPI.getDetail(DEFAULT_EVENT_ID)
@@ -65,13 +70,29 @@ export default function GeneralInformationPage() {
     }
   };
 
-  const handleFileUpload = (
+  const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setFile: (file: File | null) => void,
+    uploadFn: (fd: FormData) => Promise<any>,
+    setUploading: (v: boolean) => void,
   ) => {
     const file = e.target.files?.[0];
     if (file) {
       setFile(file);
+      const fd = new FormData();
+      fd.append("file", file);
+      setUploadError(null);
+      setUploading(true);
+      try {
+        const res = await uploadFn(fd);
+        if (!res.success) {
+          setUploadError(res.error?.message ?? "Failed to upload file.");
+        }
+      } catch {
+        setUploadError("Cannot connect to server. Make sure the backend is running.");
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
@@ -80,16 +101,20 @@ export default function GeneralInformationPage() {
     file,
     onUpload,
     onClear,
+    uploading,
   }: {
     label: string;
     file: File | null;
     onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onClear: () => void;
+    uploading?: boolean;
   }) => (
     <div>
       <label className="text-sm font-medium text-foreground">{label}</label>
       <div className="mt-2 border-2 border-dashed border-border rounded-lg p-8 bg-secondary/30">
-        {file ? (
+        {uploading ? (
+          <p className="text-sm text-muted-foreground text-center">Uploading…</p>
+        ) : file ? (
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <p className="text-sm font-medium text-foreground">{file.name}</p>
@@ -201,7 +226,15 @@ export default function GeneralInformationPage() {
             <UploadArea
               label="Logo"
               file={logoFile}
-              onUpload={(e) => handleFileUpload(e, setLogoFile)}
+              uploading={isUploadingLogo}
+              onUpload={(e) =>
+                handleFileUpload(
+                  e,
+                  setLogoFile,
+                  (fd) => brandingAPI.uploadLogo(DEFAULT_EVENT_ID, fd),
+                  setIsUploadingLogo,
+                )
+              }
               onClear={() => setLogoFile(null)}
             />
           </div>
@@ -226,7 +259,15 @@ export default function GeneralInformationPage() {
             <UploadArea
               label="Banner"
               file={bannerFile}
-              onUpload={(e) => handleFileUpload(e, setBannerFile)}
+              uploading={isUploadingBanner}
+              onUpload={(e) =>
+                handleFileUpload(
+                  e,
+                  setBannerFile,
+                  (fd) => brandingAPI.uploadBanner(DEFAULT_EVENT_ID, fd),
+                  setIsUploadingBanner,
+                )
+              }
               onClear={() => setBannerFile(null)}
             />
           </div>
@@ -286,13 +327,22 @@ export default function GeneralInformationPage() {
         <UploadArea
           label="Floor Plan"
           file={floorPlanFile}
-          onUpload={(e) => handleFileUpload(e, setFloorPlanFile)}
+          uploading={isUploadingFloorPlan}
+          onUpload={(e) =>
+            handleFileUpload(
+              e,
+              setFloorPlanFile,
+              (fd) => brandingAPI.uploadFloorPlan(DEFAULT_EVENT_ID, fd),
+              setIsUploadingFloorPlan,
+            )
+          }
           onClear={() => setFloorPlanFile(null)}
         />
       </div>
 
       {/* Save Button */}
       <div className="flex flex-col items-end gap-2">
+        {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {successMsg && <p className="text-sm text-primary">{successMsg}</p>}
         <Button

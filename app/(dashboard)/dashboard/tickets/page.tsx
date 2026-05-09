@@ -24,24 +24,30 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { ticketsAPI, DEFAULT_EVENT_ID, type TicketType } from "@/lib/api-client"
+import { checkInAPI, ticketsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client"
 
-// Mock data for attendees (not wired up yet)
-const attendeesData = [
-  { id: 1, name: "ALICE JOHNSON", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
-  { id: 2, name: "Bob Smith", ticketType: "General Pass", status: "Checked In", registration: "10/31/25", amount: "$20" },
-  { id: 3, name: "Carol Williams", ticketType: "General Pass", status: "Not Checked In", registration: "10/31/25", amount: "$20" },
-  { id: 4, name: "David Brown", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
-  { id: 5, name: "Emma Davis", ticketType: "VIP Pass", status: "Not Checked In", registration: "10/31/25", amount: "$50" },
-]
+interface Attendee {
+  id: string
+  name: string
+  ticketType: string
+  status: string
+  registration: string
+  amount: string
+}
 
-// Stats data
-const statsData = [
-  { label: "Total Attendees", value: "2,145", icon: CheckCircle2 },
-  { label: "Checked In", value: "1,743", icon: Users },
-  { label: "Total Tickets", value: "2,500", icon: Ticket },
-  { label: "Tickets Sold", value: "2,145", icon: CircleDollarSign },
-]
+interface CheckInStats {
+  total: number
+  checkedIn: number
+  remaining: number
+}
+
+function formatRegistration(iso: string): string {
+  const d = new Date(iso)
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  const yy = String(d.getFullYear()).slice(2)
+  return `${mm}/${dd}/${yy}`
+}
 
 type TabType = "attendees" | "ticket-types"
 
@@ -50,24 +56,51 @@ export default function TicketsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("attendees")
   const [searchQuery, setSearchQuery] = useState("")
 
-  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
-  const [ticketsLoading, setTicketsLoading] = useState(true)
-  const [ticketsError, setTicketsError] = useState<string | null>(null)
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [checkInStats, setCheckInStats] = useState<CheckInStats | null>(null)
+  const [attendeesLoading, setAttendeesLoading] = useState(true)
+  const [attendeesError, setAttendeesError] = useState<string | null>(null)
 
   useEffect(() => {
-    ticketsAPI.getEventTickets(DEFAULT_EVENT_ID)
-      .then((res) => {
-        if (res.success && res.data) {
-          setTicketTypes(res.data)
+    setAttendeesLoading(true)
+    setAttendeesError(null)
+
+    Promise.all([
+      ticketsAPI.getEventTickets(DEFAULT_EVENT_ID),
+      checkInAPI.getEventStatus(DEFAULT_EVENT_ID),
+    ])
+      .then(([ticketsRes, statsRes]) => {
+        if (ticketsRes.success && ticketsRes.data) {
+          const mapped: Attendee[] = (ticketsRes.data as any[]).map((t: any) => ({
+            id: t.id,
+            name: t.user?.fullName ?? "—",
+            ticketType: t.ticketType?.name ?? "—",
+            status: t.checkedInAt ? "Checked In" : "Not Checked In",
+            registration: t.createdAt ? formatRegistration(t.createdAt) : "—",
+            amount: "—",
+          }))
+          setAttendees(mapped)
         } else {
-          setTicketsError(res.error?.message ?? "Failed to load ticket types.")
+          setAttendeesError(ticketsRes.error?.message ?? "Failed to load attendees.")
+        }
+
+        if (statsRes.success && statsRes.data) {
+          const s = statsRes.data as any
+          setCheckInStats({ total: s.total, checkedIn: s.checkedIn, remaining: s.remaining })
         }
       })
-      .catch(() => setTicketsError("Cannot connect to server. Make sure the backend is running."))
-      .finally(() => setTicketsLoading(false))
+      .catch(() => setAttendeesError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setAttendeesLoading(false))
   }, [])
 
-  const filteredAttendees = attendeesData.filter(attendee =>
+  const statsData = [
+    { label: "Total Attendees", value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: CheckCircle2 },
+    { label: "Checked In",      value: attendeesLoading ? "…" : (checkInStats?.checkedIn.toLocaleString() ?? "–"), icon: Users },
+    { label: "Total Tickets",   value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: Ticket },
+    { label: "Tickets Sold",    value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: CircleDollarSign },
+  ]
+
+  const filteredAttendees = attendees.filter(attendee =>
     attendee.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -123,7 +156,7 @@ export default function TicketsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Attendees ({attendeesData.length})
+              Attendees ({attendeesLoading ? "…" : attendees.length})
               {activeTab === "attendees" && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
               )}
@@ -137,7 +170,7 @@ export default function TicketsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Ticket Types ({ticketsLoading ? "…" : ticketTypes.length})
+              Ticket Types
               {activeTab === "ticket-types" && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
               )}
@@ -153,12 +186,11 @@ export default function TicketsPage() {
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               getTicketTypeBadgeColor={getTicketTypeBadgeColor}
+              loading={attendeesLoading}
+              error={attendeesError}
             />
           ) : (
             <TicketTypesView
-              ticketTypes={ticketTypes}
-              ticketsLoading={ticketsLoading}
-              ticketsError={ticketsError}
               onCreateTicket={() => router.push("/dashboard/tickets/create")}
             />
           )}
@@ -170,13 +202,15 @@ export default function TicketsPage() {
 
 // Attendees View Component
 interface AttendeesViewProps {
-  attendees: typeof attendeesData
+  attendees: Attendee[]
   searchQuery: string
   setSearchQuery: (query: string) => void
   getTicketTypeBadgeColor: (ticketType: string) => string
+  loading: boolean
+  error: string | null
 }
 
-function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor }: AttendeesViewProps) {
+function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor, loading, error }: AttendeesViewProps) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -207,109 +241,114 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30">
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Attendee
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Ticket Type
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Status
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Registration
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Amount
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Action
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {attendees.map((attendee) => (
-              <tr key={attendee.id} className="hover:bg-muted/20 transition-colors">
-                <td className="px-4 py-4 text-sm font-medium text-foreground">
-                  {attendee.name}
-                </td>
-                <td className="px-4 py-4">
-                  <Badge
-                    variant="outline"
-                    className={cn("font-normal", getTicketTypeBadgeColor(attendee.ticketType))}
-                  >
-                    {attendee.ticketType}
-                  </Badge>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "h-2 w-2 rounded-full",
-                      attendee.status === "Checked In" ? "bg-green-500" : "bg-red-500"
-                    )} />
-                    <span className="text-sm text-foreground">{attendee.status}</span>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : attendees.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No attendees yet.</p>
+      ) : (
+        /* Table */
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Attendee
                   </div>
-                </td>
-                <td className="px-4 py-4 text-sm text-muted-foreground">
-                  {attendee.registration}
-                </td>
-                <td className="px-4 py-4 text-sm font-medium text-foreground">
-                  {attendee.amount}
-                </td>
-                <td className="px-4 py-4">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>View Details</DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Send Email
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>Check In</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Ticket Type
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Status
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Registration
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Amount
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Action
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {attendees.map((attendee) => (
+                <tr key={attendee.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">
+                    {attendee.name}
+                  </td>
+                  <td className="px-4 py-4">
+                    <Badge
+                      variant="outline"
+                      className={cn("font-normal", getTicketTypeBadgeColor(attendee.ticketType))}
+                    >
+                      {attendee.ticketType}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "h-2 w-2 rounded-full",
+                        attendee.status === "Checked In" ? "bg-green-500" : "bg-red-500"
+                      )} />
+                      <span className="text-sm text-foreground">{attendee.status}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-sm text-muted-foreground">
+                    {attendee.registration}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">
+                    {attendee.amount}
+                  </td>
+                  <td className="px-4 py-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>View Details</DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send Email
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>Check In</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
 
 // Ticket Types View Component
 interface TicketTypesViewProps {
-  ticketTypes: TicketType[]
-  ticketsLoading: boolean
-  ticketsError: string | null
   onCreateTicket: () => void
 }
 
-function TicketTypesView({ ticketTypes, ticketsLoading, ticketsError, onCreateTicket }: TicketTypesViewProps) {
+function TicketTypesView({ onCreateTicket }: TicketTypesViewProps) {
   return (
     <div className="space-y-6">
       {/* Create Button */}
@@ -323,63 +362,9 @@ function TicketTypesView({ ticketTypes, ticketsLoading, ticketsError, onCreateTi
         </Button>
       </div>
 
-      {ticketsError && (
-        <p className="text-sm text-destructive">{ticketsError}</p>
-      )}
-
-      {ticketsLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : !ticketsError && ticketTypes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No ticket types yet.</p>
-      ) : (
-        /* Ticket Cards Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {ticketTypes.map((ticket) => {
-            const displayPrice = ticket.price === 0 ? "FREE" : `$${ticket.price}`
-            const total = ticket.quantity ?? 0
-            const progressPercent = 0
-
-            return (
-              <div
-                key={ticket.id}
-                className="bg-white rounded-xl border border-border p-6 space-y-4 hover:shadow-md transition-shadow"
-              >
-                {/* Header */}
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">{ticket.name}</h3>
-                  <p className="text-xl font-bold text-primary mt-1">{displayPrice}</p>
-                </div>
-
-                {/* Stats */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Sold</span>
-                    <span className="text-foreground">– tickets</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Available</span>
-                    <span className="text-foreground">{total > 0 ? `${total} tickets` : "–"}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Revenue</span>
-                    <span className="text-primary font-semibold">–</span>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="space-y-1">
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-500"
-                      style={{ width: `${progressPercent}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <p className="text-sm text-muted-foreground">
+        Ticket types will appear here once the backend endpoint is available.
+      </p>
     </div>
   )
 }

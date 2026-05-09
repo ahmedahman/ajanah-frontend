@@ -14,6 +14,7 @@ interface TicketFormData {
   startDate: string
   endDate: string
   quantity: number
+  price: number
   ticketType: "free" | "paid"
   showLabel: boolean
   label: string
@@ -22,12 +23,13 @@ interface TicketFormData {
 export default function CreateTicketPage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+
   const [formData, setFormData] = useState<TicketFormData>({
     ticketName: "",
     startDate: "",
     endDate: "",
     quantity: 0,
+    price: 0,
     ticketType: "free",
     showLabel: true,
     label: "Free",
@@ -38,7 +40,6 @@ export default function CreateTicketPage() {
 
   const handleInputChange = (field: keyof TicketFormData, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }))
-    // Clear error when user types
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }))
     }
@@ -62,6 +63,9 @@ export default function CreateTicketPage() {
     if (formData.quantity < 0) {
       newErrors.quantity = "Quantity must be 0 or greater"
     }
+    if (formData.ticketType === "paid" && formData.price <= 0) {
+      newErrors.price = "Price must be greater than 0 for paid tickets"
+    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -73,9 +77,26 @@ export default function CreateTicketPage() {
     setIsSubmitting(true)
     setApiError(null)
 
-    setApiError('Ticket type creation is not yet available — backend endpoint pending.');
-    setIsSubmitting(false);
-    return;
+    try {
+      const payload = {
+        name: formData.ticketName,
+        price: formData.ticketType === "free" ? 0 : formData.price,
+        quantity: formData.quantity > 0 ? formData.quantity : undefined,
+        isFree: formData.ticketType === "free",
+        saleStartAt: formData.startDate ? new Date(formData.startDate).toISOString() : undefined,
+        saleEndAt: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
+      }
+      const res = await ticketsAPI.createTicketType(DEFAULT_EVENT_ID, payload as any)
+      if (res.success) {
+        router.push("/dashboard/tickets")
+      } else {
+        setApiError(res.error?.message ?? "Failed to create ticket.")
+      }
+    } catch {
+      setApiError("Cannot connect to server. Make sure the backend is running.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleCancel = () => {
@@ -86,11 +107,11 @@ export default function CreateTicketPage() {
   const formattedEndDate = useMemo(() => {
     if (!formData.endDate) return "Tue, 28th April, 2026"
     const date = new Date(formData.endDate)
-    const options: Intl.DateTimeFormatOptions = { 
-      weekday: 'short', 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
     }
     return date.toLocaleDateString('en-US', options)
   }, [formData.endDate])
@@ -228,6 +249,27 @@ export default function CreateTicketPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Price — only shown for paid tickets */}
+              {formData.ticketType === "paid" && (
+                <div className="space-y-2 max-w-md">
+                  <Label className="text-sm font-medium">
+                    <span className="text-destructive">*</span>Price
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.price || ""}
+                    onChange={(e) => handleInputChange("price", parseFloat(e.target.value) || 0)}
+                    className={cn(errors.price && "border-destructive")}
+                  />
+                  {errors.price && (
+                    <p className="text-xs text-destructive">{errors.price}</p>
+                  )}
+                </div>
+              )}
 
               {/* Show Label Toggle */}
               <div className="flex items-center justify-between max-w-md">
