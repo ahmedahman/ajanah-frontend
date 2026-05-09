@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Download, Filter } from "lucide-react";
+import { Search, Plus, Download, Filter, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   ImportModal,
   IMPORT_MODAL_CONFIGS,
   UploadedFile,
 } from "@/components/dashboard/import-modal";
 import { CreateSpeakerModal } from "@/components/dashboard/create-speaker-modal";
+import { EditSpeakerModal } from "@/components/dashboard/edit-speaker-modal";
 import { speakersAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Speaker {
@@ -31,9 +38,11 @@ export default function SpeakersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
   const fetchSpeakers = useCallback(() => {
@@ -101,6 +110,21 @@ export default function SpeakersPage() {
     }
   };
 
+  const handleDeleteSpeaker = async (speakerId: string) => {
+    if (!window.confirm("Are you sure you want to delete this speaker?")) return;
+    setDeleteError(null);
+    try {
+      const res = await speakersAPI.deleteSpeaker(DEFAULT_EVENT_ID, speakerId);
+      if (res.success) {
+        setSpeakers((prev) => prev.filter((s) => s.id !== speakerId));
+      } else {
+        setDeleteError(res.error?.message ?? "Failed to delete speaker.");
+      }
+    } catch {
+      setDeleteError("Cannot connect to server. Make sure the backend is running.");
+    }
+  };
+
   const filteredSpeakers = speakers.filter(
     (speaker) =>
       speaker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -163,8 +187,9 @@ export default function SpeakersPage() {
         </Button>
       </div>
 
-      {/* Page-level error */}
+      {/* Page-level errors */}
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
 
       {/* Content */}
       {loading ? (
@@ -184,6 +209,9 @@ export default function SpeakersPage() {
                 </th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
                   Organization
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -206,6 +234,27 @@ export default function SpeakersPage() {
                   <td className="px-6 py-4 text-sm text-foreground">
                     {speaker.company ?? "—"}
                   </td>
+                  <td className="px-6 py-4 text-sm">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setEditingSpeaker(speaker)}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleDeleteSpeaker(speaker.id)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -220,6 +269,14 @@ export default function SpeakersPage() {
           )}
         </div>
       )}
+
+      {/* Edit Speaker Modal */}
+      <EditSpeakerModal
+        isOpen={editingSpeaker !== null}
+        onClose={() => setEditingSpeaker(null)}
+        onSuccess={() => fetchSpeakers()}
+        speaker={editingSpeaker}
+      />
 
       {/* Create Speaker Modal */}
       <CreateSpeakerModal
