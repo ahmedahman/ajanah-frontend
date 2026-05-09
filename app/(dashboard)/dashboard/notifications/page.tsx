@@ -3,7 +3,16 @@
 import { useState, useEffect } from "react";
 import { Plus, MessageCircle, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { notificationsAPI, type Notification as ApiNotification } from "@/lib/api-client";
+import { notificationsAPI } from "@/lib/api-client";
+import { BroadcastNotificationModal } from "@/components/dashboard/broadcast-notification-modal";
+
+interface ApiNotification {
+  id: string;
+  title: string;
+  body: string;
+  status: "PENDING" | "SENT" | "FAILED";
+  createdAt: string;
+}
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -19,6 +28,8 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
     notificationsAPI.getAll()
@@ -31,13 +42,13 @@ export default function NotificationsPage() {
       })
       .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshCount]);
 
   const handleMarkRead = async (notificationId: string) => {
     const res = await notificationsAPI.markRead(notificationId);
     if (res.success) {
       setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+        prev.map((n) => (n.id === notificationId ? { ...n, status: "SENT" as const } : n))
       );
     }
   };
@@ -51,14 +62,20 @@ export default function NotificationsPage() {
             Send updates and announcements to your attendees
           </p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground h-10">
+        <Button
+          onClick={() => setShowBroadcastModal(true)}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground h-10"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Create Notification
         </Button>
       </div>
 
       {/* Push Notification CTA */}
-      <div className="bg-primary text-white rounded-2xl p-6 flex items-center gap-4">
+      <div
+        onClick={() => setShowBroadcastModal(true)}
+        className="bg-primary text-white rounded-2xl p-6 flex items-center gap-4 cursor-pointer"
+      >
         <div className="p-3 bg-white/20 rounded-full">
           <MessageCircle className="h-8 w-8 text-white" />
         </div>
@@ -90,23 +107,29 @@ export default function NotificationsPage() {
                 <div className="flex items-center gap-2">
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
-                      notification.isRead
+                      notification.status === "SENT"
                         ? "bg-secondary text-foreground"
-                        : "bg-primary/10 text-primary"
+                        : notification.status === "FAILED"
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-primary/10 text-primary"
                     }`}
                   >
                     <span
                       className={`w-2 h-2 rounded-full ${
-                        notification.isRead ? "bg-gray-400" : "bg-primary"
+                        notification.status === "SENT"
+                          ? "bg-gray-400"
+                          : notification.status === "FAILED"
+                            ? "bg-destructive"
+                            : "bg-primary"
                       }`}
                     />
-                    {notification.isRead ? "Read" : "Unread"}
+                    {notification.status}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleMarkRead(notification.id)}
-                    disabled={notification.isRead}
+                    disabled={notification.status === "SENT"}
                     className="text-cyan-500 hover:text-cyan-600 font-medium text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Eye className="h-4 w-4 inline mr-1" />
@@ -147,6 +170,11 @@ export default function NotificationsPage() {
           ))}
         </div>
       )}
+      <BroadcastNotificationModal
+        isOpen={showBroadcastModal}
+        onClose={() => setShowBroadcastModal(false)}
+        onSuccess={() => setRefreshCount((c) => c + 1)}
+      />
     </div>
   );
 }

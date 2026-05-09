@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
+import { ticketsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client"
 
 interface TicketFormData {
   ticketName: string
@@ -33,6 +34,7 @@ export default function CreateTicketPage() {
   })
 
   const [errors, setErrors] = useState<Partial<Record<keyof TicketFormData, string>>>({})
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const handleInputChange = (field: keyof TicketFormData, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -69,15 +71,11 @@ export default function CreateTicketPage() {
     if (!validateForm()) return
 
     setIsSubmitting(true)
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // API integration point
-    console.log("Creating ticket:", formData)
-    
-    setIsSubmitting(false)
-    router.push("/dashboard/tickets")
+    setApiError(null)
+
+    setApiError('Ticket type creation is not yet available — backend endpoint pending.');
+    setIsSubmitting(false);
+    return;
   }
 
   const handleCancel = () => {
@@ -295,7 +293,9 @@ export default function CreateTicketPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="p-6 flex items-center justify-end gap-4">
+        <div className="p-6 flex flex-col items-end gap-3">
+          {apiError && <p className="text-xs text-destructive">{apiError}</p>}
+        <div className="flex items-center gap-4">
           <Button
             variant="ghost"
             onClick={handleCancel}
@@ -310,6 +310,7 @@ export default function CreateTicketPage() {
           >
             {isSubmitting ? "Creating..." : "Create"}
           </Button>
+        </div>
         </div>
       </div>
     </div>

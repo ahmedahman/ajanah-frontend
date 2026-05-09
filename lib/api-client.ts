@@ -537,6 +537,8 @@ export const ticketsAPI = {
     return fetchAPI<TicketType>(`/tickets/${ticketId}`);
   },
 
+  // TODO: Backend endpoint POST /events/:eventId/ticket-types does not exist yet.
+  // Wire this up once the backend team adds the route.
   createTicketType(eventId: string, payload: Partial<TicketType>) {
     return fetchAPI<TicketType>(`/tickets/admin/events/${eventId}/tickets`, {
       method: 'POST',

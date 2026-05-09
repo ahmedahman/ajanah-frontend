@@ -1,73 +1,111 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Search, Plus, Download, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   ImportModal,
   IMPORT_MODAL_CONFIGS,
   UploadedFile,
 } from "@/components/dashboard/import-modal";
+import { speakersAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Speaker {
   id: string;
-  fullname: string;
-  title: string;
-  organization: string;
+  name: string;
+  company?: string;
+  bio?: string;
+  photo?: string;
+  photoUrl?: string;
+  linkedinUrl?: string;
+  twitterUrl?: string;
+  websiteUrl?: string;
+  displayOrder?: number;
+  isVisible?: boolean;
+  sessions?: unknown[];
 }
-
-const MOCK_SPEAKERS: Speaker[] = [
-  {
-    id: "1",
-    fullname: "ALICE JOHNSON",
-    title: "General Pass",
-    organization: "NITDA",
-  },
-  {
-    id: "2",
-    fullname: "Bob Smith",
-    title: "General Pass",
-    organization: "GOOGLE",
-  },
-  {
-    id: "3",
-    fullname: "Carol Williams",
-    title: "General Pass",
-    organization: "CBN",
-  },
-  {
-    id: "4",
-    fullname: "David Brown",
-    title: "Student Pass",
-    organization: "FUTURE MAP",
-  },
-  {
-    id: "5",
-    fullname: "Emma Davis",
-    title: "VIP Pass",
-    organization: "QOREBOX",
-  },
-];
 
 export default function SpeakersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [speakers] = useState<Speaker[]>(MOCK_SPEAKERS);
+  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const fetchSpeakers = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    speakersAPI
+      .getSpeakersByEvent(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          setSpeakers(res.data);
+        } else {
+          setError(res.error?.message ?? "Failed to load speakers.");
+        }
+      })
+      .catch(() =>
+        setError("Cannot connect to server. Make sure the backend is running."),
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchSpeakers();
+  }, [fetchSpeakers]);
+
+  const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
+    if (!uploadedFile.file.name.endsWith(".csv")) {
+      setImportError("Only CSV files are supported for import.");
+      return;
+    }
+
+    try {
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsText(uploadedFile.file);
+      });
+
+      const lines = text.split("\n").filter((l) => l.trim());
+      const parsedSpeakers = lines
+        .slice(1)
+        .map((row) => {
+          const cols = row.split(",");
+          return {
+            name: cols[0]?.trim() ?? "",
+            title: cols[1]?.trim() ?? "",
+            bio: cols[2]?.trim() ?? "",
+          };
+        })
+        .filter((s) => s.name);
+
+      const res = await speakersAPI.bulkCreateSpeakers(
+        DEFAULT_EVENT_ID,
+        parsedSpeakers,
+      );
+      if (res.success) {
+        setIsImportModalOpen(false);
+        setImportError(null);
+        fetchSpeakers();
+      } else {
+        setImportError(res.error?.message ?? "Failed to import speakers.");
+      }
+    } catch {
+      setImportError("Failed to read or parse the CSV file.");
+    }
+  };
 
   const filteredSpeakers = speakers.filter(
     (speaker) =>
-      speaker.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      speaker.organization.toLowerCase().includes(searchQuery.toLowerCase()),
+      speaker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (speaker.company ?? "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const getTitleBadgeColor = (title: string) => {
+  const getTitleBadgeColor = (title: string | undefined) => {
     switch (title) {
       case "VIP Pass":
         return "bg-blue-100 text-blue-700";
@@ -123,63 +161,74 @@ export default function SpeakersPage() {
         </Button>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-lg border border-border overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border bg-secondary/30">
-              <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
-                Fullname
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
-                Title
-              </th>
-              <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
-                Organization
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSpeakers.map((speaker) => (
-              <tr
-                key={speaker.id}
-                className="border-b border-border hover:bg-secondary/20 transition-colors"
-              >
-                <td className="px-6 py-4 text-sm font-medium text-foreground">
-                  {speaker.fullname}
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  <span
-                    className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getTitleBadgeColor(speaker.title)}`}
-                  >
-                    {speaker.title}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-foreground">
-                  {speaker.organization}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Page-level error */}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {filteredSpeakers.length === 0 && (
-          <div className="px-6 py-12 text-center">
-            <p className="text-muted-foreground">
-              No speakers found matching your search
-            </p>
-          </div>
-        )}
-      </div>
+      {/* Content */}
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : !error && speakers.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No speakers yet.</p>
+      ) : (
+        <div className="bg-white rounded-lg border border-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border bg-secondary/30">
+                <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
+                  Fullname
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
+                  Title
+                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-foreground">
+                  Organization
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSpeakers.map((speaker) => (
+                <tr
+                  key={speaker.id}
+                  className="border-b border-border hover:bg-secondary/20 transition-colors"
+                >
+                  <td className="px-6 py-4 text-sm font-medium text-foreground">
+                    {speaker.name}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getTitleBadgeColor(undefined)}`}
+                    >
+                      —
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-foreground">
+                    {speaker.company ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredSpeakers.length === 0 && (
+            <div className="px-6 py-12 text-center">
+              <p className="text-muted-foreground">
+                No speakers found matching your search
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Import Modal */}
       <ImportModal
         isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onImport={(file: UploadedFile) => {
-          console.log("Importing speakers file:", file);
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportError(null);
         }}
+        onImport={handleImport}
         config={IMPORT_MODAL_CONFIGS.speakers}
+        error={importError}
       />
     </div>
   );

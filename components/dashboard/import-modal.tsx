@@ -15,8 +15,9 @@ export interface ImportModalConfig {
 interface ImportModalProps {
   isOpen: boolean
   onClose: () => void
-  onImport: (file: UploadedFile) => void
+  onImport: (file: UploadedFile) => Promise<void>
   config: ImportModalConfig
+  error?: string | null
 }
 
 export interface UploadedFile {
@@ -55,7 +56,7 @@ function CloudUploadIcon({ className }: { className?: string }) {
   )
 }
 
-export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalProps) {
+export function ImportModal({ isOpen, onClose, onImport, config, error }: ImportModalProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -133,10 +134,9 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
     return (bytes / (1024 * 1024)).toFixed(1) + " MB"
   }
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (uploadedFile) {
-      onImport(uploadedFile)
-      handleClose()
+      await onImport(uploadedFile)
     }
   }
 
@@ -248,6 +248,7 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
           )}
 
           {/* Actions */}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex items-center justify-end gap-3 pt-2">
             <Button 
               variant="ghost" 

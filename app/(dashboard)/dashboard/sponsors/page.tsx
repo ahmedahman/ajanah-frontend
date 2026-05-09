@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SponsorLogoModal } from "@/components/dashboard/sponsor-logo-modal";
+import { sponsorsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Sponsor {
   id: string;
@@ -22,22 +23,7 @@ interface Sponsor {
 }
 
 export default function SponsorsPage() {
-  const [sponsors, setSponsors] = useState<Sponsor[]>([
-    {
-      id: "1",
-      type: "gold",
-      title: "Gold Sponsor",
-      logoUrl:
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/NITDA_logo-example.png",
-    },
-    {
-      id: "2",
-      type: "partner",
-      title: "Partners/Sponsor",
-      logoUrl:
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/NITDA_logo-example.png",
-    },
-  ]);
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [editingSponsors, setEditingSponsors] = useState<{
     [key: string]: boolean;
   }>({});
@@ -46,6 +32,8 @@ export default function SponsorsPage() {
   const [selectedLogoModal, setSelectedLogoModal] = useState<string | null>(
     null,
   );
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const handleEditLogo = (sponsorId: string) => {
     setSelectedLogoModal(sponsorId);
@@ -70,20 +58,38 @@ export default function SponsorsPage() {
   };
 
   const handleDeleteSponsor = (sponsorId: string) => {
+    if (!window.confirm("Are you sure?")) return;
     setSponsors((prev) => prev.filter((s) => s.id !== sponsorId));
   };
 
-  const handleAddSponsor = () => {
-    if (newSectionTitle.trim()) {
-      const newSponsor: Sponsor = {
-        id: Date.now().toString(),
-        type: "partner",
-        title: newSectionTitle,
-        redirectLink: newRedirection,
-      };
-      setSponsors((prev) => [...prev, newSponsor]);
-      setNewSectionTitle("");
-      setNewRedirection("no-links");
+  const handleAddSponsor = async () => {
+    if (!newSectionTitle.trim()) return;
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      const res = await sponsorsAPI.upsertSponsor({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        name: newSectionTitle,
+        eventId: DEFAULT_EVENT_ID,
+      } as any);
+      if (res.success && res.data) {
+        const returned = res.data as any;
+        const newSponsor: Sponsor = {
+          id: returned.id ?? Date.now().toString(),
+          type: "partner",
+          title: returned.sectionTitle ?? newSectionTitle,
+          redirectLink: newRedirection,
+        };
+        setSponsors((prev) => [...prev, newSponsor]);
+        setNewSectionTitle("");
+        setNewRedirection("no-links");
+      } else {
+        setAddError(res.error?.message ?? "Failed to add sponsor section.");
+      }
+    } catch {
+      setAddError("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -157,7 +163,7 @@ export default function SponsorsPage() {
                       </div>
                     </div>
                   ) : (
-                    <button
+                    <div
                       onClick={() => handleEditLogo(sponsor.id)}
                       className="text-center cursor-pointer hover:opacity-75 transition-opacity w-full"
                     >
@@ -190,7 +196,7 @@ export default function SponsorsPage() {
                         <Plus className="h-4 w-4 mr-2" />
                         Choose File
                       </Button>
-                    </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -269,13 +275,16 @@ export default function SponsorsPage() {
 
           {/* Add Button */}
           <div className="pt-4">
+            {addError && (
+              <p className="text-sm text-destructive mb-2">{addError}</p>
+            )}
             <Button
               onClick={handleAddSponsor}
-              disabled={!newSectionTitle.trim()}
+              disabled={isAdding || !newSectionTitle.trim()}
               className="w-full bg-muted hover:bg-muted text-foreground font-medium h-10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add +
+              {isAdding ? "Adding..." : "Add +"}
             </Button>
           </div>
         </div>
