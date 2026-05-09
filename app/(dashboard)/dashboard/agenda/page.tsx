@@ -32,6 +32,7 @@ import {
 } from "@/components/dashboard/import-modal";
 import { agendaAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 import { CreateSessionModal } from "@/components/dashboard/create-session-modal";
+import { EditSessionModal } from "@/components/dashboard/edit-session-modal";
 
 interface AgendaSession {
   id: string;
@@ -58,6 +59,7 @@ export default function AgendaPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState<AgendaSession | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<AgendaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -245,7 +247,7 @@ export default function AgendaPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setEditingSession(item)}>Edit</DropdownMenuItem>
                           <DropdownMenuItem>View details</DropdownMenuItem>
                           <DropdownMenuItem className="text-destructive">
                             Delete
@@ -290,6 +292,14 @@ export default function AgendaPage() {
           </>
         )}
       </div>
+
+      {/* Edit Session Modal */}
+      <EditSessionModal
+        isOpen={editingSession !== null}
+        onClose={() => setEditingSession(null)}
+        onSuccess={() => fetchSessions()}
+        session={editingSession}
+      />
 
       {/* Create Session Modal */}
       <CreateSessionModal

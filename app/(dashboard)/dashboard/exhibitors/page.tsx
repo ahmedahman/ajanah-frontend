@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ImportModal, IMPORT_MODAL_CONFIGS, UploadedFile } from "@/components/dashboard/import-modal"
 import { CreateExhibitorModal } from "@/components/dashboard/create-exhibitor-modal"
+import { EditExhibitorModal, type ExhibitorFull } from "@/components/dashboard/edit-exhibitor-modal"
 import { exhibitorsAPI, DEFAULT_EVENT_ID, type Exhibitor } from "@/lib/api-client"
 
 export default function ExhibitorsPage() {
@@ -35,6 +36,7 @@ export default function ExhibitorsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingExhibitor, setEditingExhibitor] = useState<ExhibitorFull | null>(null)
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -264,7 +266,7 @@ export default function ExhibitorsPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setEditingExhibitor(item as unknown as ExhibitorFull)}>Edit</DropdownMenuItem>
                           <DropdownMenuItem>View details</DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
@@ -326,6 +328,14 @@ export default function ExhibitorsPage() {
           </>
         )}
       </div>
+
+      {/* Edit Exhibitor Modal */}
+      <EditExhibitorModal
+        isOpen={editingExhibitor !== null}
+        onClose={() => setEditingExhibitor(null)}
+        onSuccess={() => fetchExhibitors()}
+        exhibitor={editingExhibitor}
+      />
 
       {/* Create Exhibitor Modal */}
       <CreateExhibitorModal
