@@ -9,6 +9,7 @@ import {
   IMPORT_MODAL_CONFIGS,
   UploadedFile,
 } from "@/components/dashboard/import-modal";
+import { CreateSpeakerModal } from "@/components/dashboard/create-speaker-modal";
 import { speakersAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Speaker {
@@ -29,6 +30,7 @@ interface Speaker {
 export default function SpeakersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,7 +156,7 @@ export default function SpeakersPage() {
 
         <Button
           className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
-          onClick={() => setIsImportModalOpen(true)}
+          onClick={() => setIsCreateModalOpen(true)}
         >
           <Plus className="h-4 w-4 mr-2" />
           Create Speakers
@@ -218,6 +220,13 @@ export default function SpeakersPage() {
           )}
         </div>
       )}
+
+      {/* Create Speaker Modal */}
+      <CreateSpeakerModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => fetchSpeakers()}
+      />
 
       {/* Import Modal */}
       <ImportModal

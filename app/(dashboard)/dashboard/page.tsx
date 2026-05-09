@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckInsChart } from "@/components/dashboard/check-ins-chart"
-import { dashboardAPI, type DashboardStats } from "@/lib/api-client"
+import { dashboardAPI, eventAPI, DEFAULT_EVENT_ID, type DashboardStats } from "@/lib/api-client"
 
 const quickActions = [
   {
@@ -61,18 +61,24 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [eventTitle, setEventTitle] = useState<string | null>(null)
 
   useEffect(() => {
-    dashboardAPI.getDashboard()
-      .then((res) => {
-        if (res.success && res.data) {
-          setStats(res.data)
-        } else {
-          setError(res.error?.message ?? "Failed to load dashboard data.")
-        }
-      })
-      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
-      .finally(() => setLoading(false))
+    Promise.all([
+      dashboardAPI.getDashboard(),
+      eventAPI.getDetail(DEFAULT_EVENT_ID),
+    ]).then(([dashRes, eventRes]) => {
+      if (dashRes.success && dashRes.data) {
+        setStats(dashRes.data)
+      } else {
+        setError(dashRes.error?.message ?? "Failed to load dashboard data.")
+      }
+      if (eventRes.success && eventRes.data) {
+        setEventTitle(eventRes.data.title)
+      }
+    })
+    .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+    .finally(() => setLoading(false))
   }, [])
 
   const statCards = [
@@ -86,7 +92,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">GiTex Nigeria 2025</h1>
+        <h1 className="text-2xl font-bold text-foreground">{eventTitle ?? "GiTex Nigeria 2025"}</h1>
         <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
           <Plus className="h-4 w-4 mr-2" />
           Invite member
