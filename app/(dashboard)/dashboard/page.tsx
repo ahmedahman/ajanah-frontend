@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [eventTitle, setEventTitle] = useState<string | null>(null)
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [analyticsData, setAnalyticsData] = useState<any>(null)
 
   const quickActions = [
     {
@@ -71,7 +72,8 @@ export default function DashboardPage() {
     Promise.all([
       dashboardAPI.getDashboard(),
       eventAPI.getDetail(DEFAULT_EVENT_ID),
-    ]).then(([dashRes, eventRes]) => {
+      eventAPI.getAnalytics(DEFAULT_EVENT_ID),
+    ]).then(([dashRes, eventRes, analyticsRes]) => {
       if (dashRes.success && dashRes.data) {
         setStats(dashRes.data)
       } else {
@@ -79,6 +81,9 @@ export default function DashboardPage() {
       }
       if (eventRes.success && eventRes.data) {
         setEventTitle(eventRes.data.title)
+      }
+      if (analyticsRes.success && analyticsRes.data) {
+        setAnalyticsData(analyticsRes.data)
       }
     })
     .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
@@ -88,8 +93,8 @@ export default function DashboardPage() {
   const statCards = [
     { label: "Total Participants", value: loading ? "…" : (stats?.totalUsers.toLocaleString() ?? "–"), icon: Users, color: "text-primary" },
     { label: "Check-ins Today", value: loading ? "…" : (stats?.dau.toLocaleString() ?? "–"), icon: UserCheck, color: "text-primary" },
-    { label: "Speakers", value: loading ? "…" : (stats?.totalSpeakers?.toLocaleString() ?? "–"), icon: Mic2, color: "text-primary" },
-    { label: "Exhibitors", value: loading ? "…" : (stats?.totalExhibitors?.toLocaleString() ?? "–"), icon: Building2, color: "text-primary" },
+    { label: "Speakers", value: loading ? "…" : (analyticsData?.speakers?.toLocaleString() ?? stats?.totalSpeakers?.toLocaleString() ?? "–"), icon: Mic2, color: "text-primary" },
+    { label: "Exhibitors", value: loading ? "…" : (analyticsData?.exhibitors?.toLocaleString() ?? stats?.totalExhibitors?.toLocaleString() ?? "–"), icon: Building2, color: "text-primary" },
   ]
 
   return (
@@ -146,6 +151,37 @@ export default function DashboardPage() {
           <CheckInsChart />
         </CardContent>
       </Card>
+
+      {/* Ticket Sales by Type */}
+      {analyticsData?.ticketTypes?.length > 0 && (
+        <Card className="bg-white">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-semibold">Ticket Sales by Type</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 text-sm font-medium text-muted-foreground">Name</th>
+                  <th className="text-left py-2 text-sm font-medium text-muted-foreground">Capacity</th>
+                  <th className="text-left py-2 text-sm font-medium text-muted-foreground">Sold</th>
+                  <th className="text-left py-2 text-sm font-medium text-muted-foreground">Remaining</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {analyticsData.ticketTypes.map((tt: any) => (
+                  <tr key={tt.id}>
+                    <td className="py-3 text-sm font-medium text-foreground">{tt.name}</td>
+                    <td className="py-3 text-sm text-muted-foreground">{tt.capacity}</td>
+                    <td className="py-3 text-sm text-muted-foreground">{tt.sold}</td>
+                    <td className="py-3 text-sm text-muted-foreground">{tt.capacity - tt.sold}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Actions */}
       <div>
