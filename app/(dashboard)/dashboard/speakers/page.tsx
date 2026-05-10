@@ -151,6 +151,15 @@ export default function SpeakersPage() {
         </Button>
 
         <Button
+          variant="outline"
+          className="h-10"
+          onClick={() => setIsImportModalOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Import
+        </Button>
+
+        <Button
           className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
           onClick={() => setIsCreateModalOpen(true)}
         >

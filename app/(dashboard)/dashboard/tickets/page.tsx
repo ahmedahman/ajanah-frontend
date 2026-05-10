@@ -54,6 +54,7 @@ interface Attendee {
   status: string
   registration: string
   amount: string
+  checkedInAt: string | null
 }
 
 interface CheckInStats {
@@ -118,6 +119,7 @@ export default function TicketsPage() {
             status: t.checkedInAt ? "Checked In" : "Not Checked In",
             registration: t.createdAt ? formatRegistration(t.createdAt) : "—",
             amount: "—",
+            checkedInAt: t.checkedInAt ?? null,
           }))
           setAttendees(mapped)
         } else {
@@ -230,6 +232,11 @@ export default function TicketsPage() {
               getTicketTypeBadgeColor={getTicketTypeBadgeColor}
               loading={attendeesLoading}
               error={attendeesError}
+              onCheckIn={(ticketId, checkedInAt) => {
+                setAttendees(prev => prev.map(a =>
+                  a.id === ticketId ? { ...a, status: "Checked In", checkedInAt } : a
+                ))
+              }}
             />
           ) : (
             <TicketTypesView
@@ -259,10 +266,27 @@ interface AttendeesViewProps {
   getTicketTypeBadgeColor: (ticketType: string) => string
   loading: boolean
   error: string | null
+  onCheckIn: (ticketId: string, checkedInAt: string) => void
 }
 
-function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor, loading, error }: AttendeesViewProps) {
+function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor, loading, error, onCheckIn }: AttendeesViewProps) {
   const [viewingAttendee, setViewingAttendee] = useState<Attendee | null>(null)
+  const [checkingInId, setCheckingInId] = useState<string | null>(null)
+  const [checkInError, setCheckInError] = useState<string | null>(null)
+
+  const handleCheckIn = async (attendee: Attendee) => {
+    if (!window.confirm("Check in this attendee?")) return
+    setCheckingInId(attendee.id)
+    setCheckInError(null)
+    const res = await checkInAPI.manualCheckIn(attendee.id)
+    setCheckingInId(null)
+    if (res.success) {
+      onCheckIn(attendee.id, new Date().toISOString())
+    } else {
+      setCheckInError(res.error?.message ?? "Check-in failed.")
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -293,6 +317,9 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
         </div>
       </div>
 
+      {checkInError && (
+        <p className="text-sm text-destructive">{checkInError}</p>
+      )}
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : error ? (
@@ -381,7 +408,16 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
                           <Mail className="h-4 w-4 mr-2" />
                           Send Email
                         </DropdownMenuItem>
-                        <DropdownMenuItem>Check In</DropdownMenuItem>
+                        {attendee.checkedInAt !== null ? (
+                          <DropdownMenuItem disabled>Already Checked In</DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            disabled={checkingInId === attendee.id}
+                            onClick={() => handleCheckIn(attendee)}
+                          >
+                            {checkingInId === attendee.id ? "Checking in…" : "Check In"}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>

@@ -4,6 +4,7 @@ import { useState, useCallback } from "react"
 import { X, FileSpreadsheet, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { DEFAULT_EVENT_ID } from "@/lib/api-client"
 
 export interface ImportModalConfig {
   title: string
@@ -218,7 +219,7 @@ export function ImportModal({ isOpen, onClose, onImport, config, error }: Import
             <button
               type="button"
               onClick={() => {
-                const url = `${process.env.NEXT_PUBLIC_API_URL}/import/template/${config.templateType}`
+                const url = `${process.env.NEXT_PUBLIC_API_URL}/events/${DEFAULT_EVENT_ID}/import/template/${config.templateType}`
                 window.open(url, '_blank')
               }}
               className="text-sm text-primary hover:underline"

@@ -644,6 +644,8 @@ export const storageAPI = {
 const checkInAPI = {
   getEventStatus: (eventId: string) =>
     fetchAPI(`/check-in/event/${eventId}/status`),
+  manualCheckIn: (ticketId: string) =>
+    fetchAPI(`/check-in/manual/${ticketId}`, { method: "POST" }),
 };
 
 export { checkInAPI };
