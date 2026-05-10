@@ -10,15 +10,19 @@ interface BroadcastNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  initialTitle?: string;
+  initialBody?: string;
 }
 
 export function BroadcastNotificationModal({
   isOpen,
   onClose,
   onSuccess,
+  initialTitle,
+  initialBody,
 }: BroadcastNotificationModalProps) {
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
+  const [title, setTitle] = useState(initialTitle ?? "");
+  const [message, setMessage] = useState(initialBody ?? "");
   const [sendAt, setSendAt] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);

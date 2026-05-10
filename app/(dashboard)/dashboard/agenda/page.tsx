@@ -30,9 +30,10 @@ import {
   IMPORT_MODAL_CONFIGS,
   UploadedFile,
 } from "@/components/dashboard/import-modal";
-import { agendaAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
+import { agendaAPI, importAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 import { CreateSessionModal } from "@/components/dashboard/create-session-modal";
 import { EditSessionModal } from "@/components/dashboard/edit-session-modal";
+import { SessionDetailsModal } from "@/components/dashboard/session-details-modal";
 
 interface AgendaSession {
   id: string;
@@ -60,6 +61,7 @@ export default function AgendaPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<AgendaSession | null>(null);
+  const [viewingSession, setViewingSession] = useState<AgendaSession | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<AgendaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,33 +103,8 @@ export default function AgendaPage() {
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
   const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
-    if (!uploadedFile.file.name.endsWith(".csv")) {
-      setImportError("Only CSV files are supported for import.");
-      return;
-    }
     try {
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsText(uploadedFile.file);
-      });
-      const lines = text.split("\n").filter((l) => l.trim());
-      const parsedSessions = lines
-        .slice(1)
-        .map((row) => {
-          const cols = row.split(",");
-          return {
-            title: cols[0]?.trim() ?? "",
-            day: cols[1]?.trim() ? Number(cols[1].trim()) : undefined,
-            startTime: cols[2]?.trim() ?? "",
-            endTime: cols[3]?.trim() ?? "",
-            location: cols[4]?.trim() ?? "",
-            eventId: DEFAULT_EVENT_ID,
-          };
-        })
-        .filter((s) => s.title);
-      const res = await agendaAPI.bulkCreateSessions(parsedSessions);
+      const res = await importAPI.importSessions(DEFAULT_EVENT_ID, uploadedFile.file);
       if (res.success) {
         setIsImportModalOpen(false);
         setImportError(null);
@@ -136,7 +113,7 @@ export default function AgendaPage() {
         setImportError(res.error?.message ?? "Failed to import sessions.");
       }
     } catch {
-      setImportError("Failed to read or parse the CSV file.");
+      setImportError("Failed to upload file. Please try again.");
     }
   };
 
@@ -248,8 +225,19 @@ export default function AgendaPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setEditingSession(item)}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem>View details</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">
+                          <DropdownMenuItem onClick={() => setViewingSession(item)}>View details</DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={async () => {
+                              if (!window.confirm("Are you sure you want to delete this session?")) return;
+                              const res = await agendaAPI.deleteSession(item.id);
+                              if (res.success) {
+                                fetchSessions();
+                              } else {
+                                setError(res.error?.message ?? "Failed to delete session.");
+                              }
+                            }}
+                          >
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -292,6 +280,13 @@ export default function AgendaPage() {
           </>
         )}
       </div>
+
+      {/* Session Details Modal */}
+      <SessionDetailsModal
+        isOpen={viewingSession !== null}
+        onClose={() => setViewingSession(null)}
+        session={viewingSession}
+      />
 
       {/* Edit Session Modal */}
       <EditSessionModal

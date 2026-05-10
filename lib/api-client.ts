@@ -32,6 +32,8 @@ export interface DashboardStats {
   totalUsers: number;
   totalEvents: number;
   totalTickets: number;
+  totalSpeakers: number;
+  totalExhibitors: number;
   mau: number;
   dau: number;
   gmv: number;
@@ -144,6 +146,16 @@ async function fetchAPI<T>(
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      window.location.href = '/login';
+    }
+    return { success: false, error: { code: 'UNAUTHORIZED', message: 'Session expired. Please log in again.' } } as ApiResponse<T>;
+  }
+
   const json: ApiResponse<T> = await res.json();
   return json;
 }
@@ -345,6 +357,10 @@ export const agendaAPI = {
     });
   },
 
+  deleteSession(sessionId: string) {
+    return fetchAPI(`/sessions/${sessionId}`, { method: 'DELETE' });
+  },
+
   getMyBookmarks() {
     return fetchAPI<Session[]>('/sessions/me/bookmarks');
   },
@@ -537,30 +553,36 @@ export const ticketsAPI = {
     return fetchAPI<TicketType>(`/tickets/${ticketId}`);
   },
 
-  // TODO: Backend endpoint POST /events/:eventId/ticket-types does not exist yet.
-  // Wire this up once the backend team adds the route.
-  createTicketType(eventId: string, payload: Partial<TicketType>) {
-    return fetchAPI<TicketType>(`/tickets/admin/events/${eventId}/tickets`, {
+  getTicketTypes(eventId: string) {
+    return fetchAPI(`/events/${eventId}/ticket-types`);
+  },
+
+  createTicketType(eventId: string, payload: object) {
+    return fetchAPI(`/events/${eventId}/ticket-types`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
-  updateTicketType(ticketId: string, payload: Partial<TicketType>) {
-    return fetchAPI<TicketType>(`/tickets/admin/tickets/${ticketId}`, {
+  updateTicketType(eventId: string, ticketTypeId: string, payload: object) {
+    return fetchAPI(`/events/${eventId}/ticket-types/${ticketTypeId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
   },
 
-  deleteTicketType(ticketId: string) {
-    return fetchAPI(`/tickets/admin/tickets/${ticketId}`, { method: 'DELETE' });
+  deleteTicketType(eventId: string, ticketTypeId: string) {
+    return fetchAPI(`/events/${eventId}/ticket-types/${ticketTypeId}`, { method: 'DELETE' });
   },
 };
 
 // ── sponsorsAPI ───────────────────────────────────────────────────────────────
 
 export const sponsorsAPI = {
+  getSponsors(eventId: string) {
+    return fetchAPI(`/events/${eventId}/sponsors`);
+  },
+
   upsertSponsor(payload: Partial<Sponsor>) {
     return fetchAPI<Sponsor>('/sponsors', {
       method: 'POST',
@@ -625,3 +647,47 @@ const checkInAPI = {
 };
 
 export { checkInAPI };
+
+// ── adminAPI ──────────────────────────────────────────────────────────────────
+
+const adminAPI = {
+  inviteMember(payload: { email: string; fullName: string; role?: string }) {
+    return fetchAPI('/admin/invite', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+export { adminAPI };
+
+// ── importAPI ─────────────────────────────────────────────────────────────────
+
+const importAPI = {
+  importSpeakers: (eventId: string, file: File) => {
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(`${BASE_URL}/events/${eventId}/import/speakers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') ?? ''}` },
+      body: fd,
+    }).then(r => r.json());
+  },
+  importExhibitors: (eventId: string, file: File) => {
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(`${BASE_URL}/events/${eventId}/import/exhibitors`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') ?? ''}` },
+      body: fd,
+    }).then(r => r.json());
+  },
+  importSessions: (eventId: string, file: File) => {
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(`${BASE_URL}/events/${eventId}/import/sessions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') ?? ''}` },
+      body: fd,
+    }).then(r => r.json());
+  },
+};
+
+export { importAPI };

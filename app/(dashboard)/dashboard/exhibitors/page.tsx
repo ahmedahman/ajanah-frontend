@@ -28,7 +28,8 @@ import {
 import { ImportModal, IMPORT_MODAL_CONFIGS, UploadedFile } from "@/components/dashboard/import-modal"
 import { CreateExhibitorModal } from "@/components/dashboard/create-exhibitor-modal"
 import { EditExhibitorModal, type ExhibitorFull } from "@/components/dashboard/edit-exhibitor-modal"
-import { exhibitorsAPI, DEFAULT_EVENT_ID, type Exhibitor } from "@/lib/api-client"
+import { exhibitorsAPI, importAPI, DEFAULT_EVENT_ID, type Exhibitor } from "@/lib/api-client"
+import { ExhibitorDetailsModal } from "@/components/dashboard/exhibitor-details-modal"
 
 export default function ExhibitorsPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -37,6 +38,7 @@ export default function ExhibitorsPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingExhibitor, setEditingExhibitor] = useState<ExhibitorFull | null>(null)
+  const [viewingExhibitor, setViewingExhibitor] = useState<Exhibitor | null>(null)
   const [exhibitors, setExhibitors] = useState<Exhibitor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -102,30 +104,8 @@ export default function ExhibitorsPage() {
   }
 
   const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
-    if (!uploadedFile.file.name.endsWith(".csv")) {
-      setImportError("Only CSV files are supported for import.")
-      return
-    }
     try {
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = (e) => resolve(e.target?.result as string)
-        reader.onerror = () => reject(new Error("Failed to read file"))
-        reader.readAsText(uploadedFile.file)
-      })
-      const lines = text.split("\n").filter((l) => l.trim())
-      const parsedExhibitors = lines
-        .slice(1)
-        .map((row) => {
-          const cols = row.split(",")
-          return {
-            name: cols[0]?.trim() ?? "",
-            website: cols[1]?.trim() ?? "",
-            description: cols[2]?.trim() ?? "",
-          }
-        })
-        .filter((e) => e.name)
-      const res = await exhibitorsAPI.bulkCreateExhibitors(DEFAULT_EVENT_ID, parsedExhibitors)
+      const res = await importAPI.importExhibitors(DEFAULT_EVENT_ID, uploadedFile.file)
       if (res.success) {
         setIsImportModalOpen(false)
         setImportError(null)
@@ -134,7 +114,7 @@ export default function ExhibitorsPage() {
         setImportError(res.error?.message ?? "Failed to import exhibitors.")
       }
     } catch {
-      setImportError("Failed to read or parse the CSV file.")
+      setImportError("Failed to upload file. Please try again.")
     }
   }
 
@@ -267,7 +247,7 @@ export default function ExhibitorsPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setEditingExhibitor(item as unknown as ExhibitorFull)}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem>View details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setViewingExhibitor(item)}>View details</DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => handleDelete(item.id)}
@@ -328,6 +308,13 @@ export default function ExhibitorsPage() {
           </>
         )}
       </div>
+
+      {/* Exhibitor Details Modal */}
+      <ExhibitorDetailsModal
+        isOpen={viewingExhibitor !== null}
+        onClose={() => setViewingExhibitor(null)}
+        exhibitor={viewingExhibitor}
+      />
 
       {/* Edit Exhibitor Modal */}
       <EditExhibitorModal

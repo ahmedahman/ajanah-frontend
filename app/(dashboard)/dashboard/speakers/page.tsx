@@ -17,7 +17,7 @@ import {
 } from "@/components/dashboard/import-modal";
 import { CreateSpeakerModal } from "@/components/dashboard/create-speaker-modal";
 import { EditSpeakerModal } from "@/components/dashboard/edit-speaker-modal";
-import { speakersAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
+import { speakersAPI, importAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Speaker {
   id: string;
@@ -68,36 +68,8 @@ export default function SpeakersPage() {
   }, [fetchSpeakers]);
 
   const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
-    if (!uploadedFile.file.name.endsWith(".csv")) {
-      setImportError("Only CSV files are supported for import.");
-      return;
-    }
-
     try {
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsText(uploadedFile.file);
-      });
-
-      const lines = text.split("\n").filter((l) => l.trim());
-      const parsedSpeakers = lines
-        .slice(1)
-        .map((row) => {
-          const cols = row.split(",");
-          return {
-            name: cols[0]?.trim() ?? "",
-            title: cols[1]?.trim() ?? "",
-            bio: cols[2]?.trim() ?? "",
-          };
-        })
-        .filter((s) => s.name);
-
-      const res = await speakersAPI.bulkCreateSpeakers(
-        DEFAULT_EVENT_ID,
-        parsedSpeakers,
-      );
+      const res = await importAPI.importSpeakers(DEFAULT_EVENT_ID, uploadedFile.file);
       if (res.success) {
         setIsImportModalOpen(false);
         setImportError(null);
@@ -106,7 +78,7 @@ export default function SpeakersPage() {
         setImportError(res.error?.message ?? "Failed to import speakers.");
       }
     } catch {
-      setImportError("Failed to read or parse the CSV file.");
+      setImportError("Failed to upload file. Please try again.");
     }
   };
 

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback } from "react"
 import {
   Search,
   Plus,
@@ -25,6 +24,28 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { checkInAPI, ticketsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client"
+import { CreateTicketTypeModal } from "@/components/dashboard/create-ticket-type-modal"
+import { AttendeeDetailsModal } from "@/components/dashboard/attendee-details-modal"
+import { EditTicketTypeModal } from "@/components/dashboard/edit-ticket-type-modal"
+
+function parseDecimal(val: unknown): number {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val);
+  if (val && typeof val === 'object' && 'd' in val) {
+    const dec = val as { s: number; e: number; d: number[] };
+    return dec.s * (dec.d[0] ?? 0) * Math.pow(10, dec.e - (String(dec.d[0] ?? 0).length - 1));
+  }
+  return 0;
+}
+
+interface TicketType {
+  id: string;
+  name: string;
+  price: unknown;
+  capacity: number;
+  sold: number;
+  isFree: boolean;
+}
 
 interface Attendee {
   id: string
@@ -52,14 +73,33 @@ function formatRegistration(iso: string): string {
 type TabType = "attendees" | "ticket-types"
 
 export default function TicketsPage() {
-  const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>("attendees")
   const [searchQuery, setSearchQuery] = useState("")
+  const [isCreateTicketTypeModalOpen, setIsCreateTicketTypeModalOpen] = useState(false)
 
   const [attendees, setAttendees] = useState<Attendee[]>([])
   const [checkInStats, setCheckInStats] = useState<CheckInStats | null>(null)
   const [attendeesLoading, setAttendeesLoading] = useState(true)
   const [attendeesError, setAttendeesError] = useState<string | null>(null)
+
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(true)
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null)
+
+  const fetchTicketTypes = useCallback(() => {
+    setTicketTypesLoading(true)
+    setTicketTypesError(null)
+    ticketsAPI.getTicketTypes(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          setTicketTypes(res.data as TicketType[])
+        } else {
+          setTicketTypesError(res.error?.message ?? "Failed to load ticket types.")
+        }
+      })
+      .catch(() => setTicketTypesError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setTicketTypesLoading(false))
+  }, [])
 
   useEffect(() => {
     setAttendeesLoading(true)
@@ -91,7 +131,9 @@ export default function TicketsPage() {
       })
       .catch(() => setAttendeesError("Cannot connect to server. Make sure the backend is running."))
       .finally(() => setAttendeesLoading(false))
-  }, [])
+
+    fetchTicketTypes()
+  }, [fetchTicketTypes])
 
   const statsData = [
     { label: "Total Attendees", value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: CheckCircle2 },
@@ -191,11 +233,20 @@ export default function TicketsPage() {
             />
           ) : (
             <TicketTypesView
-              onCreateTicket={() => router.push("/dashboard/tickets/create")}
+              ticketTypes={ticketTypes}
+              loading={ticketTypesLoading}
+              error={ticketTypesError}
+              onCreateTicket={() => setIsCreateTicketTypeModalOpen(true)}
+              onRefresh={fetchTicketTypes}
             />
           )}
         </div>
       </div>
+      <CreateTicketTypeModal
+        isOpen={isCreateTicketTypeModalOpen}
+        onClose={() => setIsCreateTicketTypeModalOpen(false)}
+        onSuccess={() => fetchTicketTypes()}
+      />
     </div>
   )
 }
@@ -211,6 +262,7 @@ interface AttendeesViewProps {
 }
 
 function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor, loading, error }: AttendeesViewProps) {
+  const [viewingAttendee, setViewingAttendee] = useState<Attendee | null>(null)
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -324,7 +376,7 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setViewingAttendee(attendee)}>View Details</DropdownMenuItem>
                         <DropdownMenuItem>
                           <Mail className="h-4 w-4 mr-2" />
                           Send Email
@@ -339,16 +391,35 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
           </table>
         </div>
       )}
+      <AttendeeDetailsModal
+        isOpen={viewingAttendee !== null}
+        onClose={() => setViewingAttendee(null)}
+        attendee={viewingAttendee}
+      />
     </div>
   )
 }
 
 // Ticket Types View Component
 interface TicketTypesViewProps {
+  ticketTypes: TicketType[]
+  loading: boolean
+  error: string | null
   onCreateTicket: () => void
+  onRefresh: () => void
 }
 
-function TicketTypesView({ onCreateTicket }: TicketTypesViewProps) {
+function TicketTypesView({ ticketTypes, loading, error, onCreateTicket, onRefresh }: TicketTypesViewProps) {
+  const [editingTicketType, setEditingTicketType] = useState<TicketType | null>(null)
+
+  const handleDelete = async (ticket: TicketType) => {
+    if (!window.confirm(`Are you sure you want to delete "${ticket.name}"?`)) return
+    const res = await ticketsAPI.deleteTicketType(DEFAULT_EVENT_ID, ticket.id)
+    if (res.success) {
+      onRefresh()
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Create Button */}
@@ -362,9 +433,64 @@ function TicketTypesView({ onCreateTicket }: TicketTypesViewProps) {
         </Button>
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Ticket types will appear here once the backend endpoint is available.
-      </p>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : ticketTypes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No ticket types yet.</p>
+      ) : (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Price</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Capacity</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Sold</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {ticketTypes.map((ticket) => (
+                <tr key={ticket.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">{ticket.name}</td>
+                  <td className="px-4 py-4 text-sm text-foreground">
+                    {ticket.isFree ? "Free" : `₦${parseDecimal(ticket.price)}`}
+                  </td>
+                  <td className="px-4 py-4 text-sm text-foreground">{ticket.capacity}</td>
+                  <td className="px-4 py-4 text-sm text-foreground">{ticket.sold}</td>
+                  <td className="px-4 py-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setEditingTicketType(ticket)}>Edit</DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleDelete(ticket)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <EditTicketTypeModal
+        isOpen={editingTicketType !== null}
+        onClose={() => setEditingTicketType(null)}
+        onSuccess={() => { onRefresh(); setEditingTicketType(null); }}
+        ticketType={editingTicketType as any}
+      />
     </div>
   )
 }

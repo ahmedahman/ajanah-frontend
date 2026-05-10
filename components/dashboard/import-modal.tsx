@@ -10,6 +10,7 @@ export interface ImportModalConfig {
   description: string
   importButtonText: string
   fileNamePrefix: string
+  templateType: string
 }
 
 interface ImportModalProps {
@@ -212,6 +213,20 @@ export function ImportModal({ isOpen, onClose, onImport, config, error }: Import
             </label>
           </div>
 
+          {/* Template download */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${process.env.NEXT_PUBLIC_API_URL}/import/template/${config.templateType}`
+                window.open(url, '_blank')
+              }}
+              className="text-sm text-primary hover:underline"
+            >
+              Download template
+            </button>
+          </div>
+
           {/* Uploaded file */}
           {uploadedFile && (
             <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-xl border border-primary/10">
@@ -278,24 +293,28 @@ export const IMPORT_MODAL_CONFIGS = {
     description: "Upload your schedule file to populate your event calendar instantly.",
     importButtonText: "Import Agenda",
     fileNamePrefix: "agenda_template",
+    templateType: "sessions",
   },
   exhibitors: {
     title: "Import Exhibitors",
     description: "Upload your existing CSV or Excel files to populate your exhibitors",
     importButtonText: "Import Exhibitors",
     fileNamePrefix: "exhibitors_template",
+    templateType: "exhibitors",
   },
   speakers: {
     title: "Import Speakers",
     description: "Upload your speaker list to add them to your event.",
     importButtonText: "Import Speakers",
     fileNamePrefix: "speakers_template",
+    templateType: "speakers",
   },
   attendees: {
     title: "Import Attendees",
     description: "Upload your attendee list to register them for the event.",
     importButtonText: "Import Attendees",
     fileNamePrefix: "attendees_template",
+    templateType: "attendees",
   },
 } as const
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import {
   Users,
   UserCheck,
@@ -17,51 +18,54 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckInsChart } from "@/components/dashboard/check-ins-chart"
 import { dashboardAPI, eventAPI, DEFAULT_EVENT_ID, type DashboardStats } from "@/lib/api-client"
-
-const quickActions = [
-  {
-    title: "Sessions & agenda",
-    description: "Manage time slots, venues, and live session syncing for all tracks.",
-    icon: Calendar,
-    action: "Add session",
-    href: "/dashboard/agenda",
-  },
-  {
-    title: "Exhibitors",
-    description: "Onboard partners and assign booth locations in the main hall.",
-    icon: Building2,
-    action: "Add exhibitor",
-    href: "/dashboard/exhibitors",
-  },
-  {
-    title: "Speakers",
-    description: "Review bios, presentation slides, and technical requirements.",
-    icon: Users2,
-    action: "Add speaker",
-    href: "/dashboard/speakers",
-  },
-  {
-    title: "Sponsorship",
-    description: "Track tier fulfillment, brand placements, and lead generation stats.",
-    icon: Gift,
-    action: "View details",
-    href: "/dashboard/sponsors",
-  },
-  {
-    title: "Notifications and alerts",
-    description: "Push real-time updates to the attendee app for schedule changes or emergency safety broadcasts.",
-    icon: Bell,
-    action: "View details",
-    href: "/dashboard/notifications",
-    urgent: 3,
-  },
-]
+import { InviteMemberModal } from "@/components/dashboard/invite-member-modal"
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [eventTitle, setEventTitle] = useState<string | null>(null)
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+
+  const quickActions = [
+    {
+      title: "Sessions & agenda",
+      description: "Manage time slots, venues, and live session syncing for all tracks.",
+      icon: Calendar,
+      action: "Add session",
+      href: "/dashboard/agenda",
+    },
+    {
+      title: "Exhibitors",
+      description: "Onboard partners and assign booth locations in the main hall.",
+      icon: Building2,
+      action: "Add exhibitor",
+      href: "/dashboard/exhibitors",
+    },
+    {
+      title: "Speakers",
+      description: "Review bios, presentation slides, and technical requirements.",
+      icon: Users2,
+      action: "Add speaker",
+      href: "/dashboard/speakers",
+    },
+    {
+      title: "Sponsorship",
+      description: "Track tier fulfillment, brand placements, and lead generation stats.",
+      icon: Gift,
+      action: "View details",
+      href: "/dashboard/sponsors",
+    },
+    {
+      title: "Notifications and alerts",
+      description: "Push real-time updates to the attendee app for schedule changes or emergency safety broadcasts.",
+      icon: Bell,
+      action: "View details",
+      href: "/dashboard/notifications",
+      urgent: 3,
+    },
+  ]
 
   useEffect(() => {
     Promise.all([
@@ -84,8 +88,8 @@ export default function DashboardPage() {
   const statCards = [
     { label: "Total Participants", value: loading ? "…" : (stats?.totalUsers.toLocaleString() ?? "–"), icon: Users, color: "text-primary" },
     { label: "Check-ins Today", value: loading ? "…" : (stats?.dau.toLocaleString() ?? "–"), icon: UserCheck, color: "text-primary" },
-    { label: "Speakers", value: "–", icon: Mic2, color: "text-primary" },
-    { label: "Exhibitors", value: "–", icon: Building2, color: "text-primary" },
+    { label: "Speakers", value: loading ? "…" : (stats?.totalSpeakers?.toLocaleString() ?? "–"), icon: Mic2, color: "text-primary" },
+    { label: "Exhibitors", value: loading ? "…" : (stats?.totalExhibitors?.toLocaleString() ?? "–"), icon: Building2, color: "text-primary" },
   ]
 
   return (
@@ -93,7 +97,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">{eventTitle ?? "GiTex Nigeria 2025"}</h1>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => setIsInviteModalOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Invite member
         </Button>
@@ -176,6 +180,7 @@ export default function DashboardPage() {
                       ? "w-full border-primary text-primary hover:bg-primary/5"
                       : "w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                   }
+                  onClick={() => router.push(action.href)}
                 >
                   {action.action.startsWith("Add") && <Plus className="h-4 w-4 mr-2" />}
                   {action.action.startsWith("Add") && action.title === "Speakers" && (
@@ -188,6 +193,11 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      <InviteMemberModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+      />
     </div>
   )
 }

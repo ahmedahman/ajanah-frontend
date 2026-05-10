@@ -6,11 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { eventAPI, brandingAPI, DEFAULT_EVENT_ID, type Event } from "@/lib/api-client";
 
-type EventDetail = Event & { youtubeStreamingUrl?: string };
+type EventDetail = Event & {
+  liveStreamUrl?: string;
+  recordingUrl?: string;
+};
 
 export default function GeneralInformationPage() {
   const [communityName, setCommunityName] = useState("");
-  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [liveStreamUrl, setLiveStreamUrl] = useState("");
+  const [recordingUrl, setRecordingUrl] = useState("");
   const [communityId, setCommunityId] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -33,7 +37,8 @@ export default function GeneralInformationPage() {
         if (res.success && res.data) {
           const event = res.data as EventDetail;
           setCommunityName(event.title ?? "");
-          setYoutubeUrl(event.youtubeStreamingUrl ?? "");
+setLiveStreamUrl(event.liveStreamUrl ?? "");
+          setRecordingUrl(event.recordingUrl ?? "");
           setCommunityId(event.id);
         } else {
           setError(res.error?.message ?? "Failed to load event data.");
@@ -56,7 +61,8 @@ export default function GeneralInformationPage() {
     try {
       const res = await eventAPI.update(DEFAULT_EVENT_ID, {
         title: communityName,
-        ...(youtubeUrl !== undefined && { youtubeStreamingUrl: youtubeUrl } as Partial<EventDetail>),
+        ...(liveStreamUrl !== undefined && { liveStreamUrl } as Partial<EventDetail>),
+        ...(recordingUrl !== undefined && { recordingUrl } as Partial<EventDetail>),
       } as Partial<Event>);
       if (res.success) {
         setSuccessMsg("Changes saved successfully.");
@@ -207,15 +213,29 @@ export default function GeneralInformationPage() {
             />
           </div>
 
-          {/* YouTube URL */}
+          {/* Live Stream URL */}
           <div>
             <label className="text-sm font-medium text-foreground">
-              YouTube Streaming URL
+              Live Stream URL
             </label>
             <Input
-              value={loading ? "" : youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder={loading ? "…" : "Enter YouTube URL"}
+              value={loading ? "" : liveStreamUrl}
+              onChange={(e) => setLiveStreamUrl(e.target.value)}
+              placeholder={loading ? "…" : "Enter live stream URL"}
+              disabled={loading}
+              className="mt-2 h-10"
+            />
+          </div>
+
+          {/* Recording URL */}
+          <div>
+            <label className="text-sm font-medium text-foreground">
+              Recording URL
+            </label>
+            <Input
+              value={loading ? "" : recordingUrl}
+              onChange={(e) => setRecordingUrl(e.target.value)}
+              placeholder={loading ? "…" : "Enter recording URL"}
               disabled={loading}
               className="mt-2 h-10"
             />

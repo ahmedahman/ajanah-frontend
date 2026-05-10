@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,32 @@ export default function SponsorsPage() {
   );
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [sponsorsLoading, setSponsorsLoading] = useState(true);
+  const [sponsorsError, setSponsorsError] = useState<string | null>(null);
+
+  const fetchSponsors = useCallback(() => {
+    setSponsorsLoading(true);
+    setSponsorsError(null);
+    sponsorsAPI.getSponsors(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const mapped: Sponsor[] = (res.data as any[]).map((item: any) => ({
+            id: item.id,
+            type: "partner" as const,
+            title: item.sectionTitle,
+          }));
+          setSponsors(mapped);
+        } else {
+          setSponsorsError(res.error?.message ?? "Failed to load sponsors.");
+        }
+      })
+      .catch(() => setSponsorsError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setSponsorsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchSponsors();
+  }, [fetchSponsors]);
 
   const handleEditLogo = (sponsorId: string) => {
     setSelectedLogoModal(sponsorId);
@@ -73,16 +99,9 @@ export default function SponsorsPage() {
         eventId: DEFAULT_EVENT_ID,
       } as any);
       if (res.success && res.data) {
-        const returned = res.data as any;
-        const newSponsor: Sponsor = {
-          id: returned.id ?? Date.now().toString(),
-          type: "partner",
-          title: returned.sectionTitle ?? newSectionTitle,
-          redirectLink: newRedirection,
-        };
-        setSponsors((prev) => [...prev, newSponsor]);
         setNewSectionTitle("");
         setNewRedirection("no-links");
+        fetchSponsors();
       } else {
         setAddError(res.error?.message ?? "Failed to add sponsor section.");
       }
@@ -106,7 +125,12 @@ export default function SponsorsPage() {
 
       {/* Existing Sponsors */}
       <div className="space-y-4">
-        {sponsors.map((sponsor) => (
+        {sponsorsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : sponsorsError ? (
+          <p className="text-sm text-destructive">{sponsorsError}</p>
+        ) : null}
+        {!sponsorsLoading && sponsors.map((sponsor) => (
           <div
             key={sponsor.id}
             className="border border-border rounded-lg p-6 bg-white"

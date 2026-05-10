@@ -30,6 +30,7 @@ export default function NotificationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
+  const [duplicatingNotification, setDuplicatingNotification] = useState<ApiNotification | null>(null);
 
   useEffect(() => {
     notificationsAPI.getAll()
@@ -135,7 +136,10 @@ export default function NotificationsPage() {
                     <Eye className="h-4 w-4 inline mr-1" />
                     View
                   </button>
-                  <button className="text-foreground hover:text-primary font-medium text-sm transition-colors">
+                  <button
+                    className="text-foreground hover:text-primary font-medium text-sm transition-colors"
+                    onClick={() => setDuplicatingNotification(notification)}
+                  >
                     Duplicate
                   </button>
                 </div>
@@ -171,9 +175,11 @@ export default function NotificationsPage() {
         </div>
       )}
       <BroadcastNotificationModal
-        isOpen={showBroadcastModal}
-        onClose={() => setShowBroadcastModal(false)}
-        onSuccess={() => setRefreshCount((c) => c + 1)}
+        isOpen={showBroadcastModal || duplicatingNotification !== null}
+        onClose={() => { setShowBroadcastModal(false); setDuplicatingNotification(null); }}
+        onSuccess={() => { setRefreshCount((c) => c + 1); setDuplicatingNotification(null); }}
+        initialTitle={duplicatingNotification?.title ?? ""}
+        initialBody={duplicatingNotification?.body ?? ""}
       />
     </div>
   );
