@@ -55,6 +55,8 @@ export default function BrandingPage() {
     },
   })
 
+  const [youtubeUrl, setYoutubeUrl] = useState("")
+
   const [pageLoading, setPageLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -70,6 +72,12 @@ export default function BrandingPage() {
           if (data.appearanceMode === "LIGHT" || data.appearanceMode === "DARK") {
             setTheme(data.appearanceMode.toLowerCase() as "light" | "dark")
           }
+          if ((data as any).navigationColor) {
+            setColors((prev) => ({
+              ...prev,
+              navigation: { ...prev.navigation, value: (data as any).navigationColor },
+            }))
+          }
           if ((data as any).mainActionsColor) {
             setColors((prev) => ({
               ...prev,
@@ -82,6 +90,19 @@ export default function BrandingPage() {
               text: { ...prev.text, value: (data as any).textColor },
             }))
           }
+          if ((data as any).contentBlocksBg) {
+            setBackgroundColors((prev) => ({
+              ...prev,
+              contentBlocks: { ...prev.contentBlocks, value: (data as any).contentBlocksBg },
+            }))
+          }
+          if ((data as any).backgroundColor) {
+            setBackgroundColors((prev) => ({
+              ...prev,
+              background: { ...prev.background, value: (data as any).backgroundColor },
+            }))
+          }
+          setYoutubeUrl((data as any).youtubeStreamingUrl ?? "")
         } else {
           setFetchError(res.error?.message ?? "Failed to load branding.")
         }
@@ -152,7 +173,7 @@ export default function BrandingPage() {
   const HEX_RE = /^#[A-Fa-f0-9]{6}$/
 
   const handleSave = async () => {
-    if (!HEX_RE.test(colors.mainActions.value) || !HEX_RE.test(colors.text.value)) {
+    if (!HEX_RE.test(colors.navigation.value) || !HEX_RE.test(colors.mainActions.value) || !HEX_RE.test(colors.text.value) || !HEX_RE.test(backgroundColors.contentBlocks.value) || !HEX_RE.test(backgroundColors.background.value)) {
       setSaveError("One or more colour values are invalid. Use the format #RRGGBB (e.g. #01A138).")
       return
     }
@@ -162,8 +183,12 @@ export default function BrandingPage() {
     try {
       const payload = {
         appearanceMode: theme.toUpperCase(),
+        navigationColor: colors.navigation.value,
         mainActionsColor: colors.mainActions.value,
         textColor: colors.text.value,
+        contentBlocksBg: backgroundColors.contentBlocks.value,
+        backgroundColor: backgroundColors.background.value,
+        youtubeStreamingUrl: youtubeUrl,
       }
 const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
       if (res.success) {
@@ -197,6 +222,30 @@ const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
 
       {/* Main Content Card */}
       <div className="bg-white rounded-xl border border-border shadow-sm">
+        {/* Basic Information Section */}
+        <div className="p-6 border-b border-border">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-4">
+              <h2 className="text-lg font-semibold text-foreground">Basic Information</h2>
+              <p className="text-sm text-primary mt-1">
+                Configure streaming and community details
+              </p>
+            </div>
+            <div className="lg:col-span-8 space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">YouTube Streaming URL</Label>
+                <Input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://youtube.com/..."
+                  className="text-sm"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Appearance Section */}
         <div className="p-6 border-b border-border">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
