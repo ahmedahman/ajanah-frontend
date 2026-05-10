@@ -21,6 +21,11 @@ export default function GeneralInformationPage() {
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null);
 
+  const [eventStatus, setEventStatus] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusSuccessMsg, setStatusSuccessMsg] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,9 +42,10 @@ export default function GeneralInformationPage() {
         if (res.success && res.data) {
           const event = res.data as EventDetail;
           setCommunityName(event.title ?? "");
-setLiveStreamUrl(event.liveStreamUrl ?? "");
+          setLiveStreamUrl(event.liveStreamUrl ?? "");
           setRecordingUrl(event.recordingUrl ?? "");
           setCommunityId(event.id);
+          setEventStatus(event.status ?? "");
         } else {
           setError(res.error?.message ?? "Failed to load event data.");
         }
@@ -73,6 +79,27 @@ setLiveStreamUrl(event.liveStreamUrl ?? "");
       setError("Cannot connect to server. Make sure the backend is running.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    const label = newStatus === "PUBLISHED" ? "publish" : "cancel";
+    if (!window.confirm(`Are you sure you want to ${label} this event?`)) return;
+    setIsUpdatingStatus(true);
+    setStatusError(null);
+    setStatusSuccessMsg(null);
+    try {
+      const res = await eventAPI.updateStatus(DEFAULT_EVENT_ID, newStatus);
+      if (res.success) {
+        setEventStatus(newStatus);
+        setStatusSuccessMsg(`Event ${label}ed successfully.`);
+      } else {
+        setStatusError((res.error as any)?.message ?? `Failed to ${label} event.`);
+      }
+    } catch {
+      setStatusError("Cannot connect to server. Make sure the backend is running.");
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -359,6 +386,49 @@ setLiveStreamUrl(event.liveStreamUrl ?? "");
           onClear={() => setFloorPlanFile(null)}
         />
       </div>
+
+      {/* Event Status */}
+      {!loading && eventStatus && (
+        <div className="border border-border rounded-lg p-6 bg-white flex flex-col gap-3">
+          <h2 className="text-xl font-bold text-foreground">Event Status</h2>
+          <div className="flex items-center gap-4">
+            <span
+              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                eventStatus === "PUBLISHED"
+                  ? "bg-primary/10 text-primary"
+                  : eventStatus === "DRAFT"
+                  ? "bg-yellow-50 text-yellow-700"
+                  : eventStatus === "CANCELLED"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-secondary text-muted-foreground"
+              }`}
+            >
+              {eventStatus}
+            </span>
+            {eventStatus === "DRAFT" && (
+              <Button
+                onClick={() => handleStatusChange("PUBLISHED")}
+                disabled={isUpdatingStatus}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-4"
+              >
+                {isUpdatingStatus ? "Publishing…" : "Publish Event"}
+              </Button>
+            )}
+            {eventStatus === "PUBLISHED" && (
+              <Button
+                variant="outline"
+                onClick={() => handleStatusChange("CANCELLED")}
+                disabled={isUpdatingStatus}
+                className="h-9 px-4"
+              >
+                {isUpdatingStatus ? "Cancelling…" : "Cancel Event"}
+              </Button>
+            )}
+          </div>
+          {statusError && <p className="text-sm text-destructive">{statusError}</p>}
+          {statusSuccessMsg && <p className="text-sm text-primary">{statusSuccessMsg}</p>}
+        </div>
+      )}
 
       {/* Save Button */}
       <div className="flex flex-col items-end gap-2">
