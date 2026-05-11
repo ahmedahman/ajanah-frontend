@@ -1,19 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Plus,
-  Filter,
   Download,
   MoreHorizontal,
-  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -33,85 +30,90 @@ import {
   IMPORT_MODAL_CONFIGS,
   UploadedFile,
 } from "@/components/dashboard/import-modal";
+import { agendaAPI, importAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
+import { CreateSessionModal } from "@/components/dashboard/create-session-modal";
+import { EditSessionModal } from "@/components/dashboard/edit-session-modal";
+import { SessionDetailsModal } from "@/components/dashboard/session-details-modal";
 
-interface AgendaItem {
+interface AgendaSession {
   id: string;
   title: string;
-  ticketType?: string;
-  description: "Checked In" | "Not Checked In";
-  date: string;
-  type: string;
-  venue: string;
+  description?: string;
+  start_time?: string;
+  end_time?: string;
+  session_date?: string;
+  room?: string;
+  location_label?: string;
+  session_type?: string;
+  capacity?: number;
+  speakers?: unknown[];
+  is_bookmarked?: boolean;
+  day?: string;
 }
 
-const mockAgendaData: AgendaItem[] = [
-  {
-    id: "1",
-    title: "ALICE JOHNSON",
-    description: "Checked In",
-    date: "10/31/25",
-    type: "FREE",
-    venue: "...",
-  },
-  {
-    id: "2",
-    title: "Bob Smith",
-    ticketType: "General Pass",
-    description: "Checked In",
-    date: "10/31/25",
-    type: "$20",
-    venue: "...",
-  },
-  {
-    id: "3",
-    title: "Carol Williams",
-    ticketType: "General Pass",
-    description: "Not Checked In",
-    date: "10/31/25",
-    type: "$20",
-    venue: "...",
-  },
-  {
-    id: "4",
-    title: "David Brown",
-    ticketType: "Student Pass",
-    description: "Checked In",
-    date: "10/31/25",
-    type: "FREE",
-    venue: "...",
-  },
-  {
-    id: "5",
-    title: "Emma Davis",
-    ticketType: "VIP Pass",
-    description: "Not Checked In",
-    date: "10/31/25",
-    type: "$50",
-    venue: "...",
-  },
-];
+interface AgendaGroup {
+  day: string;
+  sessions: AgendaSession[];
+}
 
 export default function AgendaPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState<AgendaSession | null>(null);
+  const [viewingSession, setViewingSession] = useState<AgendaSession | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const totalItems = 24;
+  const [sessions, setSessions] = useState<AgendaSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
   const itemsPerPage = 5;
 
-  const filteredData = mockAgendaData.filter((item) =>
+  const fetchSessions = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    agendaAPI
+      .getAgenda(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const groups = res.data as unknown as AgendaGroup[];
+          const flat = groups.flatMap((group) =>
+            group.sessions.map((s) => ({ ...s, day: group.day })),
+          );
+          setSessions(flat);
+        } else {
+          setError(res.error?.message ?? "Failed to load sessions.");
+        }
+      })
+      .catch(() =>
+        setError("Cannot connect to server. Make sure the backend is running."),
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  const filteredData = sessions.filter((item) =>
     item.title.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const getTicketBadgeStyle = (ticketType: string) => {
-    switch (ticketType) {
-      case "General Pass":
-        return "bg-primary/10 text-primary border-primary/20";
-      case "Student Pass":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "VIP Pass":
-        return "bg-amber-50 text-amber-700 border-amber-200";
-      default:
-        return "bg-secondary text-secondary-foreground";
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+
+  const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
+    try {
+      const res = await importAPI.importSessions(DEFAULT_EVENT_ID, uploadedFile.file);
+      if (res.success) {
+        setIsImportModalOpen(false);
+        setImportError(null);
+        fetchSessions();
+      } else {
+        setImportError(res.error?.message ?? "Failed to import sessions.");
+      }
+    } catch {
+      setImportError("Failed to upload file. Please try again.");
     }
   };
 
@@ -159,150 +161,158 @@ export default function AgendaPage() {
               <Plus className="h-4 w-4 mr-2" />
               Import
             </Button>
-            <Button className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button
+              className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create Agenda
             </Button>
           </div>
         </div>
 
-        {/* Table */}
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-secondary/30">
-              <TableHead className="min-w-48">
-                <button className="flex items-center gap-1 hover:text-foreground">
-                  Full Name
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
-              <TableHead className="min-w-40">
-                <button className="flex items-center gap-1 hover:text-foreground">
-                  Ticket Type
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
-              <TableHead className="min-w-40">
-                <button className="flex items-center gap-1 hover:text-foreground">
-                  Check-In Status
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
-              <TableHead className="min-w-32">
-                <button className="flex items-center gap-1 hover:text-foreground">
-                  Date
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
-              <TableHead className="min-w-24">
-                <button className="flex items-center gap-1 hover:text-foreground">
-                  Amount
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
-              <TableHead className="w-16">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredData.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>
-                  <span className="font-medium">{item.title}</span>
-                </TableCell>
-                <TableCell>
-                  {item.ticketType && (
-                    <Badge
-                      variant="outline"
-                      className={getTicketBadgeStyle(item.ticketType)}
-                    >
-                      {item.ticketType}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        item.description === "Checked In"
-                          ? "bg-green-500"
-                          : "bg-red-500"
-                      }`}
-                    />
-                    <span
-                      className={
-                        item.description === "Checked In"
-                          ? "text-foreground"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {item.description}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>{item.date}</TableCell>
-                <TableCell>{item.type}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                      <DropdownMenuItem>View details</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        {/* Table / states */}
+        {loading ? (
+          <p className="text-sm text-muted-foreground p-4">Loading…</p>
+        ) : error ? (
+          <p className="text-sm text-destructive p-4">{error}</p>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-4">No sessions yet.</p>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-secondary/30">
+                  <TableHead className="min-w-48">Title</TableHead>
+                  <TableHead className="min-w-16">Day</TableHead>
+                  <TableHead className="min-w-32">Start Time</TableHead>
+                  <TableHead className="min-w-32">End Time</TableHead>
+                  <TableHead className="min-w-40">Location</TableHead>
+                  <TableHead className="w-16">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredData.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <span className="font-medium">{item.title}</span>
+                    </TableCell>
+                    <TableCell>{item.day ?? "—"}</TableCell>
+                    <TableCell>
+                      {item.start_time
+                        ? new Date(item.start_time).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {item.end_time
+                        ? new Date(item.end_time).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </TableCell>
+                    <TableCell>{item.location_label ?? "—"}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Open menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setEditingSession(item)}>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setViewingSession(item)}>View details</DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={async () => {
+                              if (!window.confirm("Are you sure you want to delete this session?")) return;
+                              const res = await agendaAPI.deleteSession(item.id);
+                              if (res.success) {
+                                fetchSessions();
+                              } else {
+                                setError(res.error?.message ?? "Failed to delete session.");
+                              }
+                            }}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
 
-        {/* Pagination */}
-        <div className="p-4 flex items-center justify-between border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredData.length} of {totalItems} items
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span className="sr-only">Previous page</span>
-            </Button>
-            <span className="text-sm font-medium px-2">{currentPage}</span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage * itemsPerPage >= totalItems}
-              onClick={() => setCurrentPage((p) => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-              <span className="sr-only">Next page</span>
-            </Button>
-          </div>
-        </div>
+            {/* Pagination */}
+            <div className="p-4 flex items-center justify-between border-t border-border">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredData.length} of {sessions.length} items
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="sr-only">Previous page</span>
+                </Button>
+                <span className="text-sm font-medium px-2">{currentPage}</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={currentPage >= totalPages || totalPages === 0}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                  <span className="sr-only">Next page</span>
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Session Details Modal */}
+      <SessionDetailsModal
+        isOpen={viewingSession !== null}
+        onClose={() => setViewingSession(null)}
+        session={viewingSession}
+      />
+
+      {/* Edit Session Modal */}
+      <EditSessionModal
+        isOpen={editingSession !== null}
+        onClose={() => setEditingSession(null)}
+        onSuccess={() => fetchSessions()}
+        session={editingSession}
+      />
+
+      {/* Create Session Modal */}
+      <CreateSessionModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => fetchSessions()}
+      />
 
       {/* Import Modal */}
       <ImportModal
         isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onImport={(file: UploadedFile) => {
-          // API integration point for importing agenda
-          console.log("Importing agenda file:", file);
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportError(null);
         }}
+        onImport={handleImport}
         config={IMPORT_MODAL_CONFIGS.agenda}
+        error={importError}
       />
     </div>
   );

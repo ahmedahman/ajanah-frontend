@@ -4,19 +4,22 @@ import { useState, useCallback } from "react"
 import { X, FileSpreadsheet, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { DEFAULT_EVENT_ID } from "@/lib/api-client"
 
 export interface ImportModalConfig {
   title: string
   description: string
   importButtonText: string
   fileNamePrefix: string
+  templateType: string
 }
 
 interface ImportModalProps {
   isOpen: boolean
   onClose: () => void
-  onImport: (file: UploadedFile) => void
+  onImport: (file: UploadedFile) => Promise<void>
   config: ImportModalConfig
+  error?: string | null
 }
 
 export interface UploadedFile {
@@ -55,7 +58,7 @@ function CloudUploadIcon({ className }: { className?: string }) {
   )
 }
 
-export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalProps) {
+export function ImportModal({ isOpen, onClose, onImport, config, error }: ImportModalProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -133,10 +136,9 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
     return (bytes / (1024 * 1024)).toFixed(1) + " MB"
   }
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (uploadedFile) {
-      onImport(uploadedFile)
-      handleClose()
+      await onImport(uploadedFile)
     }
   }
 
@@ -212,6 +214,30 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
             </label>
           </div>
 
+          {/* Template download */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={async () => {
+                const token = localStorage.getItem("accessToken")
+                const url = `${process.env.NEXT_PUBLIC_API_URL}/events/${DEFAULT_EVENT_ID}/import/template/${config.templateType}`
+                const res = await fetch(url, {
+                  headers: { Authorization: `Bearer ${token}` }
+                })
+                if (!res.ok) return
+                const blob = await res.blob()
+                const a = document.createElement("a")
+                a.href = URL.createObjectURL(blob)
+                a.download = `${config.templateType}_template.xlsx`
+                a.click()
+                URL.revokeObjectURL(a.href)
+              }}
+              className="text-sm text-primary hover:underline"
+            >
+              Download template
+            </button>
+          </div>
+
           {/* Uploaded file */}
           {uploadedFile && (
             <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-xl border border-primary/10">
@@ -226,7 +252,7 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
                   {uploadedFile.size} • {uploadedFile.progress}% Ready
                 </p>
               </div>
-              <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+              <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
             </div>
           )}
 
@@ -248,6 +274,7 @@ export function ImportModal({ isOpen, onClose, onImport, config }: ImportModalPr
           )}
 
           {/* Actions */}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex items-center justify-end gap-3 pt-2">
             <Button 
               variant="ghost" 
@@ -277,24 +304,28 @@ export const IMPORT_MODAL_CONFIGS = {
     description: "Upload your schedule file to populate your event calendar instantly.",
     importButtonText: "Import Agenda",
     fileNamePrefix: "agenda_template",
+    templateType: "sessions",
   },
   exhibitors: {
     title: "Import Exhibitors",
     description: "Upload your existing CSV or Excel files to populate your exhibitors",
     importButtonText: "Import Exhibitors",
     fileNamePrefix: "exhibitors_template",
+    templateType: "exhibitors",
   },
   speakers: {
     title: "Import Speakers",
     description: "Upload your speaker list to add them to your event.",
     importButtonText: "Import Speakers",
     fileNamePrefix: "speakers_template",
+    templateType: "speakers",
   },
   attendees: {
     title: "Import Attendees",
     description: "Upload your attendee list to register them for the event.",
     importButtonText: "Import Attendees",
     fileNamePrefix: "attendees_template",
+    templateType: "attendees",
   },
 } as const
 

@@ -1,10 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { 
-  Search, 
-  Plus, 
+import { useState, useEffect, useCallback } from "react"
+import {
+  Search,
+  Plus,
   Download,
   MoreHorizontal,
   CheckCircle2,
@@ -24,72 +23,128 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { checkInAPI, ticketsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client"
+import { CreateTicketTypeModal } from "@/components/dashboard/create-ticket-type-modal"
+import { AttendeeDetailsModal } from "@/components/dashboard/attendee-details-modal"
+import { EditTicketTypeModal } from "@/components/dashboard/edit-ticket-type-modal"
 
-// Mock data for attendees
-const attendeesData = [
-  { id: 1, name: "ALICE JOHNSON", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
-  { id: 2, name: "Bob Smith", ticketType: "General Pass", status: "Checked In", registration: "10/31/25", amount: "$20" },
-  { id: 3, name: "Carol Williams", ticketType: "General Pass", status: "Not Checked In", registration: "10/31/25", amount: "$20" },
-  { id: 4, name: "David Brown", ticketType: "Student Pass", status: "Checked In", registration: "10/31/25", amount: "FREE" },
-  { id: 5, name: "Emma Davis", ticketType: "VIP Pass", status: "Not Checked In", registration: "10/31/25", amount: "$50" },
-]
+function parseDecimal(val: unknown): number {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return parseFloat(val);
+  if (val && typeof val === 'object' && 'd' in val) {
+    const dec = val as { s: number; e: number; d: number[] };
+    return dec.s * (dec.d[0] ?? 0) * Math.pow(10, dec.e - (String(dec.d[0] ?? 0).length - 1));
+  }
+  return 0;
+}
 
-// Mock data for ticket types
-const ticketTypesData = [
-  { 
-    id: 1, 
-    name: "VIP Pass", 
-    price: "$50", 
-    sold: 124, 
-    available: 26, 
-    total: 150,
-    revenue: "$6,200" 
-  },
-  { 
-    id: 2, 
-    name: "General Pass", 
-    price: "$20", 
-    sold: 543, 
-    available: 157, 
-    total: 700,
-    revenue: "$11,348" 
-  },
-  { 
-    id: 3, 
-    name: "Student Pass", 
-    price: "FREE", 
-    sold: 91, 
-    available: 107, 
-    total: 198,
-    revenue: "$0" 
-  },
-  { 
-    id: 4, 
-    name: "Early Bird", 
-    price: "$15", 
-    sold: 89, 
-    available: 11, 
-    total: 100,
-    revenue: "$1,415" 
-  },
-]
+interface TicketType {
+  id: string;
+  name: string;
+  price: unknown;
+  capacity: number;
+  sold: number;
+  isFree: boolean;
+}
 
-// Stats data
-const statsData = [
-  { label: "Total Attendees", value: "2,145", icon: CheckCircle2 },
-  { label: "Checked In", value: "1,743", icon: Users },
-  { label: "Total Tickets", value: "2,500", icon: Ticket },
-  { label: "Tickets Sold", value: "2,145", icon: CircleDollarSign },
-]
+interface Attendee {
+  id: string
+  name: string
+  ticketType: string
+  status: string
+  registration: string
+  amount: string
+  checkedInAt: string | null
+}
+
+interface CheckInStats {
+  total: number
+  checkedIn: number
+  remaining: number
+}
+
+function formatRegistration(iso: string): string {
+  const d = new Date(iso)
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  const yy = String(d.getFullYear()).slice(2)
+  return `${mm}/${dd}/${yy}`
+}
 
 type TabType = "attendees" | "ticket-types"
 
 export default function TicketsPage() {
-  const router = useRouter()
   const [activeTab, setActiveTab] = useState<TabType>("attendees")
   const [searchQuery, setSearchQuery] = useState("")
+  const [isCreateTicketTypeModalOpen, setIsCreateTicketTypeModalOpen] = useState(false)
 
-  const filteredAttendees = attendeesData.filter(attendee =>
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [checkInStats, setCheckInStats] = useState<CheckInStats | null>(null)
+  const [attendeesLoading, setAttendeesLoading] = useState(true)
+  const [attendeesError, setAttendeesError] = useState<string | null>(null)
+
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(true)
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null)
+
+  const fetchTicketTypes = useCallback(() => {
+    setTicketTypesLoading(true)
+    setTicketTypesError(null)
+    ticketsAPI.getTicketTypes(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          setTicketTypes(res.data as TicketType[])
+        } else {
+          setTicketTypesError(res.error?.message ?? "Failed to load ticket types.")
+        }
+      })
+      .catch(() => setTicketTypesError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setTicketTypesLoading(false))
+  }, [])
+
+  useEffect(() => {
+    setAttendeesLoading(true)
+    setAttendeesError(null)
+
+    Promise.all([
+      ticketsAPI.getEventTickets(DEFAULT_EVENT_ID),
+      checkInAPI.getEventStatus(DEFAULT_EVENT_ID),
+    ])
+      .then(([ticketsRes, statsRes]) => {
+        if (ticketsRes.success && ticketsRes.data) {
+          const mapped: Attendee[] = (ticketsRes.data as any[]).map((t: any) => ({
+            id: t.id,
+            name: t.user?.fullName ?? "—",
+            ticketType: t.ticketType?.name ?? "—",
+            status: t.checkedInAt ? "Checked In" : "Not Checked In",
+            registration: t.createdAt ? formatRegistration(t.createdAt) : "—",
+            amount: "—",
+            checkedInAt: t.checkedInAt ?? null,
+          }))
+          setAttendees(mapped)
+        } else {
+          setAttendeesError(ticketsRes.error?.message ?? "Failed to load attendees.")
+        }
+
+        if (statsRes.success && statsRes.data) {
+          const s = statsRes.data as any
+          setCheckInStats({ total: s.total, checkedIn: s.checkedIn, remaining: s.remaining })
+        }
+      })
+      .catch(() => setAttendeesError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setAttendeesLoading(false))
+
+    fetchTicketTypes()
+  }, [fetchTicketTypes])
+
+  const statsData = [
+    { label: "Total Attendees", value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: CheckCircle2 },
+    { label: "Checked In",      value: attendeesLoading ? "…" : (checkInStats?.checkedIn.toLocaleString() ?? "–"), icon: Users },
+    { label: "Total Tickets",   value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: Ticket },
+    { label: "Tickets Sold",    value: attendeesLoading ? "…" : (checkInStats?.total.toLocaleString() ?? "–"), icon: CircleDollarSign },
+  ]
+
+  const filteredAttendees = attendees.filter(attendee =>
     attendee.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -145,7 +200,7 @@ export default function TicketsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Attendees ({attendeesData.length})
+              Attendees ({attendeesLoading ? "…" : attendees.length})
               {activeTab === "attendees" && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
               )}
@@ -159,7 +214,7 @@ export default function TicketsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Ticket Types ({ticketTypesData.length})
+              Ticket Types
               {activeTab === "ticket-types" && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
               )}
@@ -170,33 +225,68 @@ export default function TicketsPage() {
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === "attendees" ? (
-            <AttendeesView 
+            <AttendeesView
               attendees={filteredAttendees}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
               getTicketTypeBadgeColor={getTicketTypeBadgeColor}
+              loading={attendeesLoading}
+              error={attendeesError}
+              onCheckIn={(ticketId, checkedInAt) => {
+                setAttendees(prev => prev.map(a =>
+                  a.id === ticketId ? { ...a, status: "Checked In", checkedInAt } : a
+                ))
+              }}
             />
           ) : (
-            <TicketTypesView 
-              ticketTypes={ticketTypesData}
-              onCreateTicket={() => router.push("/dashboard/tickets/create")}
+            <TicketTypesView
+              ticketTypes={ticketTypes}
+              loading={ticketTypesLoading}
+              error={ticketTypesError}
+              onCreateTicket={() => setIsCreateTicketTypeModalOpen(true)}
+              onRefresh={fetchTicketTypes}
             />
           )}
         </div>
       </div>
+      <CreateTicketTypeModal
+        isOpen={isCreateTicketTypeModalOpen}
+        onClose={() => setIsCreateTicketTypeModalOpen(false)}
+        onSuccess={() => fetchTicketTypes()}
+      />
     </div>
   )
 }
 
 // Attendees View Component
 interface AttendeesViewProps {
-  attendees: typeof attendeesData
+  attendees: Attendee[]
   searchQuery: string
   setSearchQuery: (query: string) => void
   getTicketTypeBadgeColor: (ticketType: string) => string
+  loading: boolean
+  error: string | null
+  onCheckIn: (ticketId: string, checkedInAt: string) => void
 }
 
-function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor }: AttendeesViewProps) {
+function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBadgeColor, loading, error, onCheckIn }: AttendeesViewProps) {
+  const [viewingAttendee, setViewingAttendee] = useState<Attendee | null>(null)
+  const [checkingInId, setCheckingInId] = useState<string | null>(null)
+  const [checkInError, setCheckInError] = useState<string | null>(null)
+
+  const handleCheckIn = async (attendee: Attendee) => {
+    if (!window.confirm("Check in this attendee?")) return
+    setCheckingInId(attendee.id)
+    setCheckInError(null)
+    const res = await checkInAPI.manualCheckIn(attendee.id)
+    setCheckingInId(null)
+    if (res.success) {
+      onCheckIn(attendee.id, new Date().toISOString())
+    } else {
+      setCheckInError(res.error?.message ?? "Check-in failed.")
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -227,112 +317,150 @@ function AttendeesView({ attendees, searchQuery, setSearchQuery, getTicketTypeBa
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30">
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Attendee
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Ticket Type
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Status
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Registration
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-1">
-                  Amount
-                  <ArrowUpDown className="h-3 w-3" />
-                </div>
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Action
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {attendees.map((attendee) => (
-              <tr key={attendee.id} className="hover:bg-muted/20 transition-colors">
-                <td className="px-4 py-4 text-sm font-medium text-foreground">
-                  {attendee.name}
-                </td>
-                <td className="px-4 py-4">
-                  <Badge 
-                    variant="outline" 
-                    className={cn("font-normal", getTicketTypeBadgeColor(attendee.ticketType))}
-                  >
-                    {attendee.ticketType}
-                  </Badge>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "h-2 w-2 rounded-full",
-                      attendee.status === "Checked In" ? "bg-green-500" : "bg-red-500"
-                    )} />
-                    <span className="text-sm text-foreground">{attendee.status}</span>
+      {checkInError && (
+        <p className="text-sm text-destructive">{checkInError}</p>
+      )}
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : attendees.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No attendees yet.</p>
+      ) : (
+        /* Table */
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Attendee
                   </div>
-                </td>
-                <td className="px-4 py-4 text-sm text-muted-foreground">
-                  {attendee.registration}
-                </td>
-                <td className="px-4 py-4 text-sm font-medium text-foreground">
-                  {attendee.amount}
-                </td>
-                <td className="px-4 py-4">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>View Details</DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Send Email
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>Check In</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Ticket Type
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Status
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Registration
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <div className="flex items-center gap-1">
+                    Amount
+                    <ArrowUpDown className="h-3 w-3" />
+                  </div>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Action
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {attendees.map((attendee) => (
+                <tr key={attendee.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">
+                    {attendee.name}
+                  </td>
+                  <td className="px-4 py-4">
+                    <Badge
+                      variant="outline"
+                      className={cn("font-normal", getTicketTypeBadgeColor(attendee.ticketType))}
+                    >
+                      {attendee.ticketType}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "h-2 w-2 rounded-full",
+                        attendee.status === "Checked In" ? "bg-green-500" : "bg-red-500"
+                      )} />
+                      <span className="text-sm text-foreground">{attendee.status}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-sm text-muted-foreground">
+                    {attendee.registration}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">
+                    {attendee.amount}
+                  </td>
+                  <td className="px-4 py-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setViewingAttendee(attendee)}>View Details</DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send Email
+                        </DropdownMenuItem>
+                        {attendee.checkedInAt !== null ? (
+                          <DropdownMenuItem disabled>Already Checked In</DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            disabled={checkingInId === attendee.id}
+                            onClick={() => handleCheckIn(attendee)}
+                          >
+                            {checkingInId === attendee.id ? "Checking in…" : "Check In"}
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <AttendeeDetailsModal
+        isOpen={viewingAttendee !== null}
+        onClose={() => setViewingAttendee(null)}
+        attendee={viewingAttendee}
+      />
     </div>
   )
 }
 
 // Ticket Types View Component
 interface TicketTypesViewProps {
-  ticketTypes: typeof ticketTypesData
+  ticketTypes: TicketType[]
+  loading: boolean
+  error: string | null
   onCreateTicket: () => void
+  onRefresh: () => void
 }
 
-function TicketTypesView({ ticketTypes, onCreateTicket }: TicketTypesViewProps) {
+function TicketTypesView({ ticketTypes, loading, error, onCreateTicket, onRefresh }: TicketTypesViewProps) {
+  const [editingTicketType, setEditingTicketType] = useState<TicketType | null>(null)
+
+  const handleDelete = async (ticket: TicketType) => {
+    if (!window.confirm(`Are you sure you want to delete "${ticket.name}"?`)) return
+    const res = await ticketsAPI.deleteTicketType(DEFAULT_EVENT_ID, ticket.id)
+    if (res.success) {
+      onRefresh()
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Create Button */}
       <div className="flex justify-end">
-        <Button 
+        <Button
           className="bg-primary hover:bg-primary/90 text-primary-foreground"
           onClick={onCreateTicket}
         >
@@ -341,51 +469,64 @@ function TicketTypesView({ ticketTypes, onCreateTicket }: TicketTypesViewProps) 
         </Button>
       </div>
 
-      {/* Ticket Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {ticketTypes.map((ticket) => {
-          const progressPercent = (ticket.sold / ticket.total) * 100
-          
-          return (
-            <div 
-              key={ticket.id} 
-              className="bg-white rounded-xl border border-border p-6 space-y-4 hover:shadow-md transition-shadow"
-            >
-              {/* Header */}
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">{ticket.name}</h3>
-                <p className="text-xl font-bold text-primary mt-1">{ticket.price}</p>
-              </div>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : ticketTypes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No ticket types yet.</p>
+      ) : (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted/30">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Price</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Capacity</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Sold</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {ticketTypes.map((ticket) => (
+                <tr key={ticket.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="px-4 py-4 text-sm font-medium text-foreground">{ticket.name}</td>
+                  <td className="px-4 py-4 text-sm text-foreground">
+                    {ticket.isFree ? "Free" : `₦${parseDecimal(ticket.price)}`}
+                  </td>
+                  <td className="px-4 py-4 text-sm text-foreground">{ticket.capacity}</td>
+                  <td className="px-4 py-4 text-sm text-foreground">{ticket.sold}</td>
+                  <td className="px-4 py-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setEditingTicketType(ticket)}>Edit</DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleDelete(ticket)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-              {/* Stats */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Sold</span>
-                  <span className="text-foreground">{ticket.sold} tickets</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Available</span>
-                  <span className="text-foreground">{ticket.available} tickets</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Total Revenue</span>
-                  <span className="text-primary font-semibold">{ticket.revenue}</span>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-1">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <EditTicketTypeModal
+        isOpen={editingTicketType !== null}
+        onClose={() => setEditingTicketType(null)}
+        onSuccess={() => { onRefresh(); setEditingTicketType(null); }}
+        ticketType={editingTicketType as any}
+      />
     </div>
   )
 }

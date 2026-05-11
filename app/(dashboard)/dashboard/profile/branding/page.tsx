@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Upload, Crop, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
+import { brandingAPI, DEFAULT_EVENT_ID } from "@/lib/api-client"
 
 interface ColorSetting {
   label: string
@@ -19,11 +20,11 @@ export default function BrandingPage() {
   const [theme, setTheme] = useState<"light" | "dark">("light")
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   const [colors, setColors] = useState<Record<string, ColorSetting>>({
     navigation: {
       label: "Navigation",
-      value: "#0000000",
+      value: "#000000",
       description: "Colour of the menu (navigation bar)",
       enabled: false,
     },
@@ -35,7 +36,7 @@ export default function BrandingPage() {
     },
     text: {
       label: "Text",
-      value: "#0000000",
+      value: "#000000",
       description: "Colour of all written content.",
       enabled: false,
     },
@@ -49,15 +50,74 @@ export default function BrandingPage() {
     },
     background: {
       label: "Background",
-      value: "#0000000",
+      value: "#000000",
       enabled: false,
     },
   })
 
+  const [youtubeUrl, setYoutubeUrl] = useState("")
+
+  const [pageLoading, setPageLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  useEffect(() => {
+    brandingAPI
+      .getBranding(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const data = res.data
+          if (data.appearanceMode === "LIGHT" || data.appearanceMode === "DARK") {
+            setTheme(data.appearanceMode.toLowerCase() as "light" | "dark")
+          }
+          if ((data as any).navigationColor) {
+            setColors((prev) => ({
+              ...prev,
+              navigation: { ...prev.navigation, value: (data as any).navigationColor },
+            }))
+          }
+          if ((data as any).mainActionsColor) {
+            setColors((prev) => ({
+              ...prev,
+              mainActions: { ...prev.mainActions, value: (data as any).mainActionsColor },
+            }))
+          }
+          if ((data as any).textColor) {
+            setColors((prev) => ({
+              ...prev,
+              text: { ...prev.text, value: (data as any).textColor },
+            }))
+          }
+          if ((data as any).contentBlocksBg) {
+            setBackgroundColors((prev) => ({
+              ...prev,
+              contentBlocks: { ...prev.contentBlocks, value: (data as any).contentBlocksBg },
+            }))
+          }
+          if ((data as any).backgroundColor) {
+            setBackgroundColors((prev) => ({
+              ...prev,
+              background: { ...prev.background, value: (data as any).backgroundColor },
+            }))
+          }
+          setYoutubeUrl((data as any).youtubeStreamingUrl ?? "")
+        } else {
+          setFetchError(res.error?.message ?? "Failed to load branding.")
+        }
+      })
+      .catch(() =>
+        setFetchError("Cannot connect to server. Make sure the backend is running."),
+      )
+      .finally(() => setPageLoading(false))
+  }, [])
+
   const handleColorChange = (key: string, value: string) => {
+    const sanitised = value === "" || value.startsWith("#") ? value : `#${value}`
     setColors(prev => ({
       ...prev,
-      [key]: { ...prev[key], value }
+      [key]: { ...prev[key], value: sanitised }
     }))
   }
 
@@ -90,6 +150,16 @@ export default function BrandingPage() {
         setBackgroundImage(event.target?.result as string)
       }
       reader.readAsDataURL(file)
+
+      const formData = new FormData()
+      formData.append("file", file)
+      brandingAPI.uploadBackground(DEFAULT_EVENT_ID, formData).then((res) => {
+        if (!res.success) {
+          setSaveError(res.error?.message ?? "Failed to upload background image.")
+        }
+      }).catch(() => {
+        setSaveError("Cannot connect to server. Make sure the backend is running.")
+      })
     }
   }
 
@@ -97,6 +167,40 @@ export default function BrandingPage() {
     setBackgroundImage(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
+    }
+  }
+
+  const HEX_RE = /^#[A-Fa-f0-9]{6}$/
+
+  const handleSave = async () => {
+    if (!HEX_RE.test(colors.navigation.value) || !HEX_RE.test(colors.mainActions.value) || !HEX_RE.test(colors.text.value) || !HEX_RE.test(backgroundColors.contentBlocks.value) || !HEX_RE.test(backgroundColors.background.value)) {
+      setSaveError("One or more colour values are invalid. Use the format #RRGGBB (e.g. #01A138).")
+      return
+    }
+    setIsSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+    try {
+      const payload = {
+        appearanceMode: theme.toUpperCase(),
+        navigationColor: colors.navigation.value,
+        mainActionsColor: colors.mainActions.value,
+        textColor: colors.text.value,
+        contentBlocksBg: backgroundColors.contentBlocks.value,
+        backgroundColor: backgroundColors.background.value,
+        youtubeStreamingUrl: youtubeUrl,
+      }
+const res = await brandingAPI.updateBranding(DEFAULT_EVENT_ID, payload as any)
+      if (res.success) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      } else {
+        setSaveError(res.error?.message ?? "Failed to save branding.")
+      }
+    } catch {
+      setSaveError("Cannot connect to server. Make sure the backend is running.")
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -108,8 +212,40 @@ export default function BrandingPage() {
         <p className="text-primary mt-1">Customise your event</p>
       </div>
 
+      {/* Load states */}
+      {pageLoading && (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      )}
+      {fetchError && (
+        <p className="text-sm text-destructive">{fetchError}</p>
+      )}
+
       {/* Main Content Card */}
       <div className="bg-white rounded-xl border border-border shadow-sm">
+        {/* Basic Information Section */}
+        <div className="p-6 border-b border-border">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-4">
+              <h2 className="text-lg font-semibold text-foreground">Basic Information</h2>
+              <p className="text-sm text-primary mt-1">
+                Configure streaming and community details
+              </p>
+            </div>
+            <div className="lg:col-span-8 space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">YouTube Streaming URL</Label>
+                <Input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://youtube.com/..."
+                  className="text-sm"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Appearance Section */}
         <div className="p-6 border-b border-border">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -129,8 +265,8 @@ export default function BrandingPage() {
                   onClick={() => setTheme("light")}
                   className={cn(
                     "flex-1 rounded-xl border-2 overflow-hidden transition-all",
-                    theme === "light" 
-                      ? "border-primary ring-2 ring-primary/20" 
+                    theme === "light"
+                      ? "border-primary ring-2 ring-primary/20"
                       : "border-border hover:border-muted-foreground/30"
                   )}
                 >
@@ -154,8 +290,8 @@ export default function BrandingPage() {
                   onClick={() => setTheme("dark")}
                   className={cn(
                     "flex-1 rounded-xl border-2 overflow-hidden transition-all",
-                    theme === "dark" 
-                      ? "border-primary ring-2 ring-primary/20" 
+                    theme === "dark"
+                      ? "border-primary ring-2 ring-primary/20"
                       : "border-border hover:border-muted-foreground/30"
                   )}
                 >
@@ -261,7 +397,7 @@ export default function BrandingPage() {
                 <Label className="text-sm font-medium text-foreground">
                   Background image
                 </Label>
-                <div 
+                <div
                   className={cn(
                     "border-2 border-dashed border-border rounded-lg p-8 text-center transition-colors",
                     "hover:border-primary/50 hover:bg-muted/30 cursor-pointer",
@@ -278,9 +414,9 @@ export default function BrandingPage() {
                   />
                   {backgroundImage ? (
                     <div className="space-y-4">
-                      <img 
-                        src={backgroundImage} 
-                        alt="Background preview" 
+                      <img
+                        src={backgroundImage}
+                        alt="Background preview"
                         className="max-h-40 mx-auto rounded-lg object-cover"
                       />
                     </div>
@@ -293,21 +429,21 @@ export default function BrandingPage() {
                     </div>
                   )}
                 </div>
-                
+
                 {/* Image Actions */}
                 <div className="flex items-center justify-center gap-4 pt-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="text-muted-foreground hover:text-foreground"
                     disabled={!backgroundImage}
                   >
                     <Crop className="w-4 h-4 mr-2" />
                     Crop
                   </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={handleDeleteImage}
                     disabled={!backgroundImage}
@@ -323,9 +459,19 @@ export default function BrandingPage() {
       </div>
 
       {/* Save Button */}
-      <div className="flex justify-end">
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground px-8">
-          Save Changes
+      <div className="flex flex-col items-end gap-2">
+        {saveSuccess && (
+          <p className="text-sm text-primary">Saved successfully.</p>
+        )}
+        {saveError && (
+          <p className="text-sm text-destructive">{saveError}</p>
+        )}
+        <Button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground px-8"
+        >
+          {isSaving ? "Saving…" : "Save Changes"}
         </Button>
       </div>
     </div>

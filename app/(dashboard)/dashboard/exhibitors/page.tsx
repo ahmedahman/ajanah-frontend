@@ -1,18 +1,15 @@
 "use client"
 
-import { useState } from "react"
-import { 
-  Search, 
-  Plus, 
-  Filter, 
+import { useState, useEffect, useCallback } from "react"
+import {
+  Search,
+  Plus,
   MoreVertical,
   ChevronLeft,
   ChevronRight,
-  ExternalLink
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
@@ -29,83 +26,52 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ImportModal, IMPORT_MODAL_CONFIGS, UploadedFile } from "@/components/dashboard/import-modal"
-
-interface Exhibitor {
-  id: string
-  logo: string
-  name: string
-  group: string
-  groupColor: string
-  type: string
-  description: string
-  website: string
-}
-
-const mockExhibitors: Exhibitor[] = [
-  {
-    id: "1",
-    logo: "/api/placeholder/40/40",
-    name: "Atlas Exhibits",
-    group: "Core Tech",
-    groupColor: "bg-teal-500",
-    type: "Digital Art",
-    description: "Pioneering interactive display modules...",
-    website: "atlas.tech",
-  },
-  {
-    id: "2",
-    logo: "/api/placeholder/40/40",
-    name: "Quantum Bio",
-    group: "Biology",
-    groupColor: "bg-green-500",
-    type: "Laboratory",
-    description: "Visualizing microscopic structures...",
-    website: "qbio.labs",
-  },
-  {
-    id: "3",
-    logo: "/api/placeholder/40/40",
-    name: "Nexus Media",
-    group: "Core Tech",
-    groupColor: "bg-teal-500",
-    type: "Audio Visual",
-    description: "High-fidelity spatial sound installations...",
-    website: "nexus.media",
-  },
-  {
-    id: "4",
-    logo: "/api/placeholder/40/40",
-    name: "Solar Systems",
-    group: "Energy",
-    groupColor: "bg-gray-500",
-    type: "Hardware",
-    description: "Sustainable energy solutions integrated",
-    website: "solarsys.co",
-  },
-  {
-    id: "5",
-    logo: "/api/placeholder/40/40",
-    name: "Heritage Ltd.",
-    group: "History",
-    groupColor: "bg-amber-500",
-    type: "Consultancy",
-    description: "Preserving physical artifacts with non-...",
-    website: "heritage.museum",
-  },
-]
+import { CreateExhibitorModal } from "@/components/dashboard/create-exhibitor-modal"
+import { EditExhibitorModal, type ExhibitorFull } from "@/components/dashboard/edit-exhibitor-modal"
+import { exhibitorsAPI, importAPI, DEFAULT_EVENT_ID, type Exhibitor } from "@/lib/api-client"
+import { ExhibitorDetailsModal } from "@/components/dashboard/exhibitor-details-modal"
 
 export default function ExhibitorsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const totalItems = 24
-  const itemsPerPage = 5
-  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingExhibitor, setEditingExhibitor] = useState<ExhibitorFull | null>(null)
+  const [viewingExhibitor, setViewingExhibitor] = useState<Exhibitor | null>(null)
+  const [exhibitors, setExhibitors] = useState<Exhibitor[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
-  const filteredData = mockExhibitors.filter((item) =>
+  const itemsPerPage = 5
+
+  const fetchExhibitors = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    exhibitorsAPI
+      .getExhibitors(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          setExhibitors(res.data)
+        } else {
+          setError(res.error?.message ?? "Failed to load exhibitors.")
+        }
+      })
+      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetchExhibitors()
+  }, [fetchExhibitors])
+
+  const filteredData = exhibitors.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage)
 
   const toggleSelectAll = () => {
     if (selectedItems.length === filteredData.length) {
@@ -119,6 +85,37 @@ export default function ExhibitorsPage() {
     setSelectedItems((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     )
+  }
+
+  const handleDelete = async (exhibitorId: string) => {
+    if (!window.confirm("Are you sure you want to delete this? This cannot be undone.")) return
+    setDeleteError(null)
+    try {
+      const res = await exhibitorsAPI.deleteExhibitor(exhibitorId)
+      if (res.success) {
+        setExhibitors((prev) => prev.filter((e) => e.id !== exhibitorId))
+        setSelectedItems((prev) => prev.filter((id) => id !== exhibitorId))
+      } else {
+        setDeleteError(res.error?.message ?? "Failed to delete exhibitor.")
+      }
+    } catch {
+      setDeleteError("Cannot connect to server. Make sure the backend is running.")
+    }
+  }
+
+  const handleImport = async (uploadedFile: UploadedFile): Promise<void> => {
+    try {
+      const res = await importAPI.importExhibitors(DEFAULT_EVENT_ID, uploadedFile.file)
+      if (res.success) {
+        setIsImportModalOpen(false)
+        setImportError(null)
+        fetchExhibitors()
+      } else {
+        setImportError(res.error?.message ?? "Failed to import exhibitors.")
+      }
+    } catch {
+      setImportError("Failed to upload file. Please try again.")
+    }
   }
 
   return (
@@ -154,157 +151,196 @@ export default function ExhibitorsPage() {
               <Plus className="h-4 w-4 mr-2" />
               Export
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="h-10"
               onClick={() => setIsImportModalOpen(true)}
             >
               <Plus className="h-4 w-4 mr-2" />
               Import
             </Button>
-            <Button className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground">
+            <Button
+              className="h-10 bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => setIsCreateModalOpen(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create Exhibitors
             </Button>
           </div>
         </div>
 
-        {/* Table */}
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-secondary/30">
-              <TableHead className="w-12">
-                <Checkbox
-                  checked={selectedItems.length === filteredData.length}
-                  onCheckedChange={toggleSelectAll}
-                  aria-label="Select all"
-                />
-              </TableHead>
-              <TableHead className="w-16">LOGO</TableHead>
-              <TableHead>NAME</TableHead>
-              <TableHead>GROUP</TableHead>
-              <TableHead>TYPE</TableHead>
-              <TableHead>DESCRIPTION</TableHead>
-              <TableHead>WEBSITE</TableHead>
-              <TableHead className="w-16">ACTIONS</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredData.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>
-                  <Checkbox
-                    checked={selectedItems.includes(item.id)}
-                    onCheckedChange={() => toggleSelectItem(item.id)}
-                    aria-label={`Select ${item.name}`}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="w-10 h-10 bg-secondary rounded-lg flex items-center justify-center">
-                    <span className="text-xs font-bold text-muted-foreground">
-                      {item.name.charAt(0)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="secondary"
-                    className={`${item.groupColor} text-white border-0`}
-                  >
-                    {item.group}
-                  </Badge>
-                </TableCell>
-                <TableCell>{item.type}</TableCell>
-                <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                  {item.description}
-                </TableCell>
-                <TableCell>
-                  <a
-                    href={`https://${item.website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1"
-                  >
-                    {item.website}
-                  </a>
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                      <DropdownMenuItem>View details</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        {/* Delete error */}
+        {deleteError && <p className="text-sm text-destructive px-4 pt-3">{deleteError}</p>}
 
-        {/* Pagination */}
-        <div className="p-4 flex items-center justify-between border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            Showing 1 to {filteredData.length} of {totalItems} exhibitors
-          </p>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span className="sr-only">Previous page</span>
-            </Button>
-            {[1, 2, 3].map((page) => (
-              <Button
-                key={page}
-                variant={currentPage === page ? "default" : "outline"}
-                size="icon"
-                className={`h-8 w-8 ${
-                  currentPage === page
-                    ? "bg-primary text-primary-foreground"
-                    : ""
-                }`}
-                onClick={() => setCurrentPage(page)}
-              >
-                {page}
-              </Button>
-            ))}
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            >
-              <ChevronRight className="h-4 w-4" />
-              <span className="sr-only">Next page</span>
-            </Button>
-          </div>
-        </div>
+        {/* Table / states */}
+        {loading ? (
+          <p className="text-sm text-muted-foreground p-4">Loading…</p>
+        ) : error ? (
+          <p className="text-sm text-destructive p-4">{error}</p>
+        ) : exhibitors.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-4">No exhibitors yet.</p>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-secondary/30">
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={filteredData.length > 0 && selectedItems.length === filteredData.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
+                  <TableHead className="w-16">LOGO</TableHead>
+                  <TableHead>NAME</TableHead>
+                  <TableHead>GROUP</TableHead>
+                  <TableHead>TYPE</TableHead>
+                  <TableHead>DESCRIPTION</TableHead>
+                  <TableHead>WEBSITE</TableHead>
+                  <TableHead className="w-16">ACTIONS</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredData.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedItems.includes(item.id)}
+                        onCheckedChange={() => toggleSelectItem(item.id)}
+                        aria-label={`Select ${item.name}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="w-10 h-10 bg-secondary rounded-lg flex items-center justify-center">
+                        <span className="text-xs font-bold text-muted-foreground">
+                          {item.name.charAt(0)}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell>—</TableCell>
+                    <TableCell>—</TableCell>
+                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                      {item.description ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      {item.website ? (
+                        <a
+                          href={`https://${item.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                        >
+                          {item.website}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                            <span className="sr-only">Open menu</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setEditingExhibitor(item as unknown as ExhibitorFull)}>Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setViewingExhibitor(item)}>View details</DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => handleDelete(item.id)}
+                          >
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {/* Pagination */}
+            <div className="p-4 flex items-center justify-between border-t border-border">
+              <p className="text-sm text-muted-foreground">
+                Showing 1 to {filteredData.length} of {exhibitors.length} exhibitors
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="sr-only">Previous page</span>
+                </Button>
+                {[1, 2, 3].map((page) => (
+                  <Button
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="icon"
+                    className={`h-8 w-8 ${
+                      currentPage === page
+                        ? "bg-primary text-primary-foreground"
+                        : ""
+                    }`}
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </Button>
+                ))}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                  <span className="sr-only">Next page</span>
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Exhibitor Details Modal */}
+      <ExhibitorDetailsModal
+        isOpen={viewingExhibitor !== null}
+        onClose={() => setViewingExhibitor(null)}
+        exhibitor={viewingExhibitor}
+      />
+
+      {/* Edit Exhibitor Modal */}
+      <EditExhibitorModal
+        isOpen={editingExhibitor !== null}
+        onClose={() => setEditingExhibitor(null)}
+        onSuccess={() => fetchExhibitors()}
+        exhibitor={editingExhibitor}
+      />
+
+      {/* Create Exhibitor Modal */}
+      <CreateExhibitorModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={() => fetchExhibitors()}
+      />
 
       {/* Import Modal */}
       <ImportModal
         isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onImport={(file: UploadedFile) => {
-          // API integration point for importing exhibitors
-          console.log("Importing exhibitors file:", file)
+        onClose={() => {
+          setIsImportModalOpen(false)
+          setImportError(null)
         }}
+        onImport={handleImport}
         config={IMPORT_MODAL_CONFIGS.exhibitors}
+        error={importError}
       />
     </div>
   )

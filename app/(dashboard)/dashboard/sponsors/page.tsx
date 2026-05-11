@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SponsorLogoModal } from "@/components/dashboard/sponsor-logo-modal";
+import { sponsorsAPI, DEFAULT_EVENT_ID } from "@/lib/api-client";
 
 interface Sponsor {
   id: string;
@@ -22,22 +23,7 @@ interface Sponsor {
 }
 
 export default function SponsorsPage() {
-  const [sponsors, setSponsors] = useState<Sponsor[]>([
-    {
-      id: "1",
-      type: "gold",
-      title: "Gold Sponsor",
-      logoUrl:
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/NITDA_logo-example.png",
-    },
-    {
-      id: "2",
-      type: "partner",
-      title: "Partners/Sponsor",
-      logoUrl:
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/NITDA_logo-example.png",
-    },
-  ]);
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [editingSponsors, setEditingSponsors] = useState<{
     [key: string]: boolean;
   }>({});
@@ -46,6 +32,34 @@ export default function SponsorsPage() {
   const [selectedLogoModal, setSelectedLogoModal] = useState<string | null>(
     null,
   );
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [sponsorsLoading, setSponsorsLoading] = useState(true);
+  const [sponsorsError, setSponsorsError] = useState<string | null>(null);
+
+  const fetchSponsors = useCallback(() => {
+    setSponsorsLoading(true);
+    setSponsorsError(null);
+    sponsorsAPI.getSponsors(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const mapped: Sponsor[] = (res.data as any[]).map((item: any) => ({
+            id: item.id,
+            type: "partner" as const,
+            title: item.sectionTitle,
+          }));
+          setSponsors(mapped);
+        } else {
+          setSponsorsError(res.error?.message ?? "Failed to load sponsors.");
+        }
+      })
+      .catch(() => setSponsorsError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setSponsorsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchSponsors();
+  }, [fetchSponsors]);
 
   const handleEditLogo = (sponsorId: string) => {
     setSelectedLogoModal(sponsorId);
@@ -70,20 +84,31 @@ export default function SponsorsPage() {
   };
 
   const handleDeleteSponsor = (sponsorId: string) => {
+    if (!window.confirm("Are you sure?")) return;
     setSponsors((prev) => prev.filter((s) => s.id !== sponsorId));
   };
 
-  const handleAddSponsor = () => {
-    if (newSectionTitle.trim()) {
-      const newSponsor: Sponsor = {
-        id: Date.now().toString(),
-        type: "partner",
-        title: newSectionTitle,
-        redirectLink: newRedirection,
-      };
-      setSponsors((prev) => [...prev, newSponsor]);
-      setNewSectionTitle("");
-      setNewRedirection("no-links");
+  const handleAddSponsor = async () => {
+    if (!newSectionTitle.trim()) return;
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      const res = await sponsorsAPI.upsertSponsor({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        name: newSectionTitle,
+        eventId: DEFAULT_EVENT_ID,
+      } as any);
+      if (res.success && res.data) {
+        setNewSectionTitle("");
+        setNewRedirection("no-links");
+        fetchSponsors();
+      } else {
+        setAddError(res.error?.message ?? "Failed to add sponsor section.");
+      }
+    } catch {
+      setAddError("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -100,7 +125,12 @@ export default function SponsorsPage() {
 
       {/* Existing Sponsors */}
       <div className="space-y-4">
-        {sponsors.map((sponsor) => (
+        {sponsorsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : sponsorsError ? (
+          <p className="text-sm text-destructive">{sponsorsError}</p>
+        ) : null}
+        {!sponsorsLoading && sponsors.map((sponsor) => (
           <div
             key={sponsor.id}
             className="border border-border rounded-lg p-6 bg-white"
@@ -157,7 +187,7 @@ export default function SponsorsPage() {
                       </div>
                     </div>
                   ) : (
-                    <button
+                    <div
                       onClick={() => handleEditLogo(sponsor.id)}
                       className="text-center cursor-pointer hover:opacity-75 transition-opacity w-full"
                     >
@@ -190,7 +220,7 @@ export default function SponsorsPage() {
                         <Plus className="h-4 w-4 mr-2" />
                         Choose File
                       </Button>
-                    </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -269,13 +299,16 @@ export default function SponsorsPage() {
 
           {/* Add Button */}
           <div className="pt-4">
+            {addError && (
+              <p className="text-sm text-destructive mb-2">{addError}</p>
+            )}
             <Button
               onClick={handleAddSponsor}
-              disabled={!newSectionTitle.trim()}
+              disabled={isAdding || !newSectionTitle.trim()}
               className="w-full bg-muted hover:bg-muted text-foreground font-medium h-10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add +
+              {isAdding ? "Adding..." : "Add +"}
             </Button>
           </div>
         </div>

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
+import { authAPI } from "@/lib/api-client"
 
 const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -29,6 +30,7 @@ export function SignInForm({ onSwitchToSignUp }: SignInFormProps) {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const {
     register,
@@ -49,14 +51,25 @@ export function SignInForm({ onSwitchToSignUp }: SignInFormProps) {
 
   const onSubmit = async (data: SignInFormData) => {
     setIsLoading(true)
+    setApiError(null)
     try {
-      // API integration point
-      console.log("[v0] Sign in data:", data)
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const res = await authAPI.login({ email: data.email, password: data.password })
+      if (!res.success || !res.data) {
+        setApiError(res.error?.message ?? "Login failed. Please try again.")
+        return
+      }
+      localStorage.setItem("accessToken", res.data.accessToken)
+      localStorage.setItem("refreshToken", res.data.refreshToken)
+      localStorage.setItem("user", JSON.stringify(res.data.user))
       router.push("/dashboard")
-    } catch (error) {
-      console.error("[v0] Sign in error:", error)
+    } catch (err) {
+      if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
+        setApiError("Cannot connect to server. Make sure the backend is running.")
+      } else if (err instanceof Error) {
+        setApiError(err.message)
+      } else {
+        setApiError("An unexpected error occurred. Please try again.")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -138,6 +151,10 @@ export function SignInForm({ onSwitchToSignUp }: SignInFormProps) {
             Forgot password?
           </Link>
         </div>
+
+        {apiError && (
+          <p className="text-sm text-destructive">{apiError}</p>
+        )}
 
         <Button
           type="submit"

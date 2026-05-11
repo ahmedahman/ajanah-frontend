@@ -1,20 +1,58 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { eventAPI, brandingAPI, DEFAULT_EVENT_ID, type Event } from "@/lib/api-client";
+
+type EventDetail = Event & {
+  liveStreamUrl?: string;
+  recordingUrl?: string;
+};
 
 export default function GeneralInformationPage() {
   const [communityName, setCommunityName] = useState("");
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [communityId, setCommunityId] = useState(
-    "CMTY_" + Math.random().toString(36).substr(2, 9),
-  );
+  const [liveStreamUrl, setLiveStreamUrl] = useState("");
+  const [recordingUrl, setRecordingUrl] = useState("");
+  const [communityId, setCommunityId] = useState("");
   const [copiedId, setCopiedId] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [floorPlanFile, setFloorPlanFile] = useState<File | null>(null);
+
+  const [eventStatus, setEventStatus] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusSuccessMsg, setStatusSuccessMsg] = useState<string | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [isUploadingFloorPlan, setIsUploadingFloorPlan] = useState(false);
+
+  useEffect(() => {
+    eventAPI.getDetail(DEFAULT_EVENT_ID)
+      .then((res) => {
+        if (res.success && res.data) {
+          const event = res.data as EventDetail;
+          setCommunityName(event.title ?? "");
+          setLiveStreamUrl(event.liveStreamUrl ?? "");
+          setRecordingUrl(event.recordingUrl ?? "");
+          setCommunityId(event.id);
+          setEventStatus(event.status ?? "");
+        } else {
+          setError(res.error?.message ?? "Failed to load event data.");
+        }
+      })
+      .catch(() => setError("Cannot connect to server. Make sure the backend is running."))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(communityId);
@@ -22,13 +60,72 @@ export default function GeneralInformationPage() {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const handleFileUpload = (
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await eventAPI.update(DEFAULT_EVENT_ID, {
+        title: communityName,
+        ...(liveStreamUrl !== undefined && { liveStreamUrl } as Partial<EventDetail>),
+        ...(recordingUrl !== undefined && { recordingUrl } as Partial<EventDetail>),
+      } as Partial<Event>);
+      if (res.success) {
+        setSuccessMsg("Changes saved successfully.");
+      } else {
+        setError(res.error?.message ?? "Failed to save changes.");
+      }
+    } catch {
+      setError("Cannot connect to server. Make sure the backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    const label = newStatus === "PUBLISHED" ? "publish" : "cancel";
+    if (!window.confirm(`Are you sure you want to ${label} this event?`)) return;
+    setIsUpdatingStatus(true);
+    setStatusError(null);
+    setStatusSuccessMsg(null);
+    try {
+      const res = await eventAPI.updateStatus(DEFAULT_EVENT_ID, newStatus);
+      if (res.success) {
+        setEventStatus(newStatus);
+        setStatusSuccessMsg(`Event ${label}ed successfully.`);
+      } else {
+        setStatusError((res.error as any)?.message ?? `Failed to ${label} event.`);
+      }
+    } catch {
+      setStatusError("Cannot connect to server. Make sure the backend is running.");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setFile: (file: File | null) => void,
+    uploadFn: (fd: FormData) => Promise<any>,
+    setUploading: (v: boolean) => void,
   ) => {
     const file = e.target.files?.[0];
     if (file) {
       setFile(file);
+      const fd = new FormData();
+      fd.append("file", file);
+      setUploadError(null);
+      setUploading(true);
+      try {
+        const res = await uploadFn(fd);
+        if (!res.success) {
+          setUploadError(res.error?.message ?? "Failed to upload file.");
+        }
+      } catch {
+        setUploadError("Cannot connect to server. Make sure the backend is running.");
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
@@ -37,16 +134,20 @@ export default function GeneralInformationPage() {
     file,
     onUpload,
     onClear,
+    uploading,
   }: {
     label: string;
     file: File | null;
     onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onClear: () => void;
+    uploading?: boolean;
   }) => (
     <div>
       <label className="text-sm font-medium text-foreground">{label}</label>
       <div className="mt-2 border-2 border-dashed border-border rounded-lg p-8 bg-secondary/30">
-        {file ? (
+        {uploading ? (
+          <p className="text-sm text-muted-foreground text-center">Uploading…</p>
+        ) : file ? (
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <p className="text-sm font-medium text-foreground">{file.name}</p>
@@ -131,22 +232,38 @@ export default function GeneralInformationPage() {
               Community Name
             </label>
             <Input
-              value={communityName}
+              value={loading ? "" : communityName}
               onChange={(e) => setCommunityName(e.target.value)}
-              placeholder="Enter Community Name"
+              placeholder={loading ? "…" : "Enter Community Name"}
+              disabled={loading}
               className="mt-2 h-10"
             />
           </div>
 
-          {/* YouTube URL */}
+          {/* Live Stream URL */}
           <div>
             <label className="text-sm font-medium text-foreground">
-              YouTube Streaming URL
+              Live Stream URL
             </label>
             <Input
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              placeholder="Enter YouTube URL"
+              value={loading ? "" : liveStreamUrl}
+              onChange={(e) => setLiveStreamUrl(e.target.value)}
+              placeholder={loading ? "…" : "Enter live stream URL"}
+              disabled={loading}
+              className="mt-2 h-10"
+            />
+          </div>
+
+          {/* Recording URL */}
+          <div>
+            <label className="text-sm font-medium text-foreground">
+              Recording URL
+            </label>
+            <Input
+              value={loading ? "" : recordingUrl}
+              onChange={(e) => setRecordingUrl(e.target.value)}
+              placeholder={loading ? "…" : "Enter recording URL"}
+              disabled={loading}
               className="mt-2 h-10"
             />
           </div>
@@ -156,7 +273,15 @@ export default function GeneralInformationPage() {
             <UploadArea
               label="Logo"
               file={logoFile}
-              onUpload={(e) => handleFileUpload(e, setLogoFile)}
+              uploading={isUploadingLogo}
+              onUpload={(e) =>
+                handleFileUpload(
+                  e,
+                  setLogoFile,
+                  (fd) => brandingAPI.uploadLogo(DEFAULT_EVENT_ID, fd),
+                  setIsUploadingLogo,
+                )
+              }
               onClear={() => setLogoFile(null)}
             />
           </div>
@@ -181,7 +306,15 @@ export default function GeneralInformationPage() {
             <UploadArea
               label="Banner"
               file={bannerFile}
-              onUpload={(e) => handleFileUpload(e, setBannerFile)}
+              uploading={isUploadingBanner}
+              onUpload={(e) =>
+                handleFileUpload(
+                  e,
+                  setBannerFile,
+                  (fd) => brandingAPI.uploadBanner(DEFAULT_EVENT_ID, fd),
+                  setIsUploadingBanner,
+                )
+              }
               onClear={() => setBannerFile(null)}
             />
           </div>
@@ -194,7 +327,7 @@ export default function GeneralInformationPage() {
               </h3>
               <div className="flex gap-2">
                 <Input
-                  value={communityId}
+                  value={loading ? "…" : communityId}
                   readOnly
                   className="h-10 bg-muted text-foreground"
                 />
@@ -203,6 +336,7 @@ export default function GeneralInformationPage() {
                   variant="outline"
                   size="icon"
                   className="h-10 w-10"
+                  disabled={loading}
                 >
                   {copiedId ? (
                     <svg
@@ -240,15 +374,73 @@ export default function GeneralInformationPage() {
         <UploadArea
           label="Floor Plan"
           file={floorPlanFile}
-          onUpload={(e) => handleFileUpload(e, setFloorPlanFile)}
+          uploading={isUploadingFloorPlan}
+          onUpload={(e) =>
+            handleFileUpload(
+              e,
+              setFloorPlanFile,
+              (fd) => brandingAPI.uploadFloorPlan(DEFAULT_EVENT_ID, fd),
+              setIsUploadingFloorPlan,
+            )
+          }
           onClear={() => setFloorPlanFile(null)}
         />
       </div>
 
+      {/* Event Status */}
+      {!loading && eventStatus && (
+        <div className="border border-border rounded-lg p-6 bg-white flex flex-col gap-3">
+          <h2 className="text-xl font-bold text-foreground">Event Status</h2>
+          <div className="flex items-center gap-4">
+            <span
+              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                eventStatus === "PUBLISHED"
+                  ? "bg-primary/10 text-primary"
+                  : eventStatus === "DRAFT"
+                  ? "bg-yellow-50 text-yellow-700"
+                  : eventStatus === "CANCELLED"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-secondary text-muted-foreground"
+              }`}
+            >
+              {eventStatus}
+            </span>
+            {eventStatus === "DRAFT" && (
+              <Button
+                onClick={() => handleStatusChange("PUBLISHED")}
+                disabled={isUpdatingStatus}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-4"
+              >
+                {isUpdatingStatus ? "Publishing…" : "Publish Event"}
+              </Button>
+            )}
+            {eventStatus === "PUBLISHED" && (
+              <Button
+                variant="outline"
+                onClick={() => handleStatusChange("CANCELLED")}
+                disabled={isUpdatingStatus}
+                className="h-9 px-4"
+              >
+                {isUpdatingStatus ? "Cancelling…" : "Cancel Event"}
+              </Button>
+            )}
+          </div>
+          {statusError && <p className="text-sm text-destructive">{statusError}</p>}
+          {statusSuccessMsg && <p className="text-sm text-primary">{statusSuccessMsg}</p>}
+        </div>
+      )}
+
       {/* Save Button */}
-      <div className="flex justify-end">
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 px-8">
-          Save Changes
+      <div className="flex flex-col items-end gap-2">
+        {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {successMsg && <p className="text-sm text-primary">{successMsg}</p>}
+        <Button
+          onClick={handleSave}
+          disabled={loading || saving}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 px-8"
+        >
+          {saving ? "Saving…" : "Save Changes"}
         </Button>
       </div>
     </div>
