@@ -218,9 +218,19 @@ export function ImportModal({ isOpen, onClose, onImport, config, error }: Import
           <div className="text-center">
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
+                const token = localStorage.getItem("accessToken")
                 const url = `${process.env.NEXT_PUBLIC_API_URL}/events/${DEFAULT_EVENT_ID}/import/template/${config.templateType}`
-                window.open(url, '_blank')
+                const res = await fetch(url, {
+                  headers: { Authorization: `Bearer ${token}` }
+                })
+                if (!res.ok) return
+                const blob = await res.blob()
+                const a = document.createElement("a")
+                a.href = URL.createObjectURL(blob)
+                a.download = `${config.templateType}_template.xlsx`
+                a.click()
+                URL.revokeObjectURL(a.href)
               }}
               className="text-sm text-primary hover:underline"
             >
@@ -242,7 +252,7 @@ export function ImportModal({ isOpen, onClose, onImport, config, error }: Import
                   {uploadedFile.size} • {uploadedFile.progress}% Ready
                 </p>
               </div>
-              <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+              <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
             </div>
           )}
 
